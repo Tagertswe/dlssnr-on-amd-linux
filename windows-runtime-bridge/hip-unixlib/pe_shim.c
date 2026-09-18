@@ -1,6 +1,6 @@
 /* PE-side (Windows/Wine) half of the amdhip64_7 unixlib module.
  *
- * Ports daniel/hip-stub's Rust implementation onto the Wine-unixlib
+ * Ports windows-runtime-bridge/hip-stub's Rust implementation onto the Wine-unixlib
  * mechanism confirmed compatible with Proton 11.0 (see
  * docs/linux-support-spec.md). Device/memory/kernel-launch functions
  * call through WINE_UNIX_CALL into native.c's real HIP implementation;

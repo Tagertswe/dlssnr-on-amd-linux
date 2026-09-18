@@ -1,13 +1,13 @@
 # Third-party notices
 
 This repo's own code is MIT licensed (see `LICENSE`). Two small files
-under `daniel/investigations/` are adapted (C ports, restructured to
+under `windows-runtime-bridge/investigations/` are adapted (C ports, restructured to
 this project's style - not copied verbatim) from a separate MIT-licensed
 project, and carry that project's license notice as required:
 
-- `daniel/investigations/snapshot_gate.h`/`.c`
+- `windows-runtime-bridge/investigations/snapshot_gate.h`/`.c`
 - The ring-buffer/deferred-fence submission logic in
-  `daniel/investigations/faithful_submission_probe.c`
+  `windows-runtime-bridge/investigations/faithful_submission_probe.c`
 
 Adapted from **guentra/dlss5-amd-hip-linux**
 (<https://github.com/guentra/dlss5-amd-hip-linux>),

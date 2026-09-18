@@ -24,7 +24,7 @@ conflict this project's `../README.md` describes. This wasn't inferred
 | `ReShade.ini` | generated | `[PROXY] ProxyLibrary=.\lmxxf-d3d12.dll` - tells ReShade where to proxy real D3D12 calls |
 | `DLSS5-AMD/native-game-tiled-assets/` | generated from the user's own `nvngx_dlssnr.dll` via his weight-conversion tooling | Converted network weights, resident in VRAM at runtime - never NVIDIA's actual DLL/weights redistributed |
 
-**Not vendored here** - same standing rule as `daniel/vendor/` for
+**Not vendored here** - same standing rule as `windows-runtime-bridge/vendor/` for
 danielblnc's runtime. A real install needs the user's own copy of
 guentra's release archive
 (`https://github.com/guentra/dlss5-amd-hip-linux/releases`), extracted
@@ -39,7 +39,7 @@ env-var launch-options string like this project uses) that:
    `d3d12`/`d3d12core`/`dxgi`/`dlss5_hip` (and, in HIP mode, `version`
    too) before setting its own - real, careful handling to avoid
    duplicate/conflicting override entries if something else (like
-   this project's own `daniel` backend) already set them.
+   this project's own `danielblnc` backend) already set them.
 2. Sets, for the HIP-inference mode specifically:
    `WINEDLLOVERRIDES="version=b;dlss5_hip=n;d3d12=n,b;d3d12core=n,b"`
    (plus `dxgi=n,b` too if targeting a Magpie-hooked title, not
@@ -58,11 +58,11 @@ test: does his backend need a stock, unpatched Proton install instead
 of this project's patched one? Worth confirming from his own
 `docs/BUILD.md`/`BUILD-POC.md` before attempting a real test.
 
-## Switching back to the `daniel` backend afterward
+## Switching back to the `danielblnc` backend afterward
 
 `switch_backend.sh` handles this - backs up whichever of this
 directory's files are present, restores `../danielblnc/`'s file set.
 Manual equivalent: remove `d3d12.dll`, `lmxxf-d3d12.dll`,
 `d3d12core.dll`, `dlss5_hip.dll`, `ReShade.ini`, restore
 `version.dll`/`amdhip64_7.dll`/`dlssnr_on_amd.ini`, and go back to the
-`daniel` backend's own launch options and compatibility tool.
+`danielblnc` backend's own launch options and compatibility tool.

@@ -2,7 +2,7 @@
 
 This project's whole architecture, until now, assumed exactly one
 thing: danielblnc's proprietary runtime, DLL-hijacked via `version.dll`,
-with `daniel/hip-unixlib` forwarding its real HIP calls to ROCm.
+with `windows-runtime-bridge/hip-unixlib` forwarding its real HIP calls to ROCm.
 
 `guentra/dlss5-amd-hip-linux` (MIT licensed) is a genuinely different,
 self-contained alternative - an independent, open-source reimplementation
@@ -20,7 +20,7 @@ switchable, without ever having both active at once.
 
 Both backends want to own overlapping surface:
 
-- **`daniel` backend** (this project's original, fully-working design):
+- **`danielblnc` backend** (this project's original, fully-working design):
   `version.dll` hijack (danielblnc's runtime) + `WINEDLLOVERRIDES`
   forcing this project's own `amdhip64_7.dll`/`.so` as the HIP shim.
   The D3D12↔HIP interop patch (`external_memory_fd`) lives at the
@@ -51,7 +51,7 @@ not a theoretical concern - hence: pick one, cleanly.
   and `ReShade.ini` shape his installer produces, real-researched from
   his actual source (`linux/dlssnr/deploy.py`) - not guessed. **Does
   not vendor his binaries** - same standing rule as this project's own
-  `daniel/vendor/` for danielblnc's runtime: users get his real release
+  `windows-runtime-bridge/vendor/` for danielblnc's runtime: users get his real release
   from his own GitHub releases page, this project's tooling only
   arranges it correctly once present locally.
 - `switch_backend.sh` - backs up whichever backend's files are

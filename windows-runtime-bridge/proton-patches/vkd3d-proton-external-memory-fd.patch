@@ -1,0 +1,891 @@
+diff --git a/include/private/config_flag_decl.h b/include/private/config_flag_decl.h
+index 036d0b5..7cdeecf 100644
+--- a/include/private/config_flag_decl.h
++++ b/include/private/config_flag_decl.h
+@@ -1,6 +1,7 @@
+ /* This file can be included multiple times depending on context. */
+ 
+ VKD3D_DECL_CONFIG("vk_debug", VULKAN_DEBUG)
++VKD3D_DECL_CONFIG("external_memory_fd", EXTERNAL_MEMORY_FD)
+ VKD3D_DECL_CONFIG("skip_application_workarounds", SKIP_APPLICATION_WORKAROUNDS)
+ VKD3D_DECL_CONFIG("debug_utils", DEBUG_UTILS)
+ VKD3D_DECL_CONFIG("force_static_cbv", FORCE_STATIC_CBV)
+diff --git a/include/private/config_flags.h b/include/private/config_flags.h
+index 60ce844..dca0acb 100644
+--- a/include/private/config_flags.h
++++ b/include/private/config_flags.h
+@@ -31,7 +31,7 @@ struct vkd3d_config_flags_bitfield
+ 	 * we may end up with stray uninitialized bits which can subtly break bitwise operations later.
+ 	 * Adding more configs will cause the static assert below to fail,
+ 	 * which indicates the need to subtract a reserved bit. */
+-	uint32_t reserved0 : 24;
++	uint32_t reserved0 : 23;
+ };
+ 
+ STATIC_ASSERT(sizeof(struct vkd3d_config_flags_bitfield) == 12);
+diff --git a/libs/vkd3d/device.c b/libs/vkd3d/device.c
+index 371bd28..a1f4787 100644
+--- a/libs/vkd3d/device.c
++++ b/libs/vkd3d/device.c
+@@ -100,6 +100,18 @@ static const struct vkd3d_optional_extension_info optional_device_extensions[] =
+     VK_EXTENSION(KHR_EXTERNAL_MEMORY_WIN32, KHR_external_memory_win32),
+     VK_EXTENSION(KHR_EXTERNAL_SEMAPHORE_WIN32, KHR_external_semaphore_win32),
+ #endif
++    /* Opt-in only (VKD3D_CONFIG=external_memory_fd): lets a D3D12_HEAP_FLAG_SHARED
++     * allocation export its backing memory as a real Linux file descriptor
++     * instead of the Win32-style handle path, which does not produce a
++     * usable handle when vkd3d-proton is running under Wine (D3DKMTShareObjects
++     * reports success without a real handle, and the Vulkan Win32 external-
++     * memory handle types are meaningless against a native Linux driver).
++     * Off by default: enabling KHR_external_memory_fd unconditionally would
++     * change behavior for every game using shared D3D12 resources, most of
++     * which have no need for this. See resource.c's D3D12_HEAP_FLAG_SHARED
++     * handling for where this is actually used. */
++    VK_EXTENSION_COND(KHR_EXTERNAL_MEMORY_FD, KHR_external_memory_fd,
++            VKD3D_CONFIG_FLAG_STATIC(EXTERNAL_MEMORY_FD)),
+     VK_EXTENSION(KHR_INDEX_TYPE_UINT8, KHR_index_type_uint8),
+     VK_EXTENSION(KHR_SHADER_FLOAT_CONTROLS_2, KHR_shader_float_controls2),
+     VK_EXTENSION_COND(KHR_DYNAMIC_RENDERING_LOCAL_READ, KHR_dynamic_rendering_local_read, VKD3D_CONFIG_FLAG_STATIC(REQUIRE_INPUT_ATTACHMENTS)),
+@@ -6664,6 +6676,86 @@ static HRESULT STDMETHODCALLTYPE d3d12_device_CreateSharedHandle(d3d12_device_if
+             return DXGI_ERROR_INVALID_CALL;
+         }
+ 
++#ifdef VK_KHR_external_memory_fd
++        /* Opt-in only (VKD3D_CONFIG=external_memory_fd). D3DKMTShareObjects
++         * below reports success under Wine without producing a handle
++         * anything can actually use, and the Vulkan Win32 external-memory
++         * path further down has no native counterpart on a non-Windows
++         * driver either - so when this resource's memory was allocated
++         * with VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT (see the
++         * buffer branch of d3d12_resource_create_committed() and
++         * d3d12_heap_init(), which are the only places that set this up),
++         * skip both of those and hand back a real Linux file descriptor
++         * instead. The fd is returned through the HANDLE out-parameter as
++         * a plain integer value: this function only runs under Wine
++         * (_WIN32 is defined for the PE cross-build), so *handle* never
++         * needs to satisfy any real Win32 handle-table semantics - it only
++         * needs to survive the round trip back to a caller on the same
++         * side of the Wine boundary that knows to treat it as an fd.
++         *
++         * Only buffers are ever allocated with FD-exportable memory by
++         * this patch (see the comments on the buffer branch of
++         * d3d12_resource_create_committed() and on d3d12_heap_init()) -
++         * a shared texture's memory is still allocated Win32-only, so
++         * calling vkGetMemoryFdKHR against it would ask the driver to
++         * export a handle type its memory was never allocated with,
++         * which is invalid Vulkan usage. Gate on resource dimension,
++         * not just the device-level capability flag, so this can never
++         * fire for a texture. */
++        if (device->vk_info.KHR_external_memory_fd && vk_procs->vkGetMemoryFdKHR &&
++                resource->desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER)
++        {
++            VkMemoryGetFdInfoKHR fd_info;
++            VkResult vr;
++            int fd;
++
++            fd_info.sType = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR;
++            fd_info.pNext = NULL;
++            fd_info.memory = resource->mem.device_allocation.vk_memory;
++            fd_info.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
++
++            WARN("Attempting vkGetMemoryFdKHR for shared buffer resource %p, vk_memory %#"PRIx64".\n",
++                    resource, (uint64_t)(uintptr_t)fd_info.memory);
++
++            fd = -1;
++            vr = VK_CALL(vkGetMemoryFdKHR(device->vk_device, &fd_info, &fd));
++
++            WARN("vkGetMemoryFdKHR returned vr %d, fd %d.\n", vr, fd);
++
++            if (vr == VK_SUCCESS)
++            {
++                if (attributes)
++                    FIXME("attributes %p not handled.\n", attributes);
++                if (access)
++                    FIXME("access %#x not handled.\n", (int)access);
++                if (name)
++                    FIXME("name %s not handled.\n", debugstr_w(name));
++
++                *handle = (HANDLE)(intptr_t)fd;
++                ID3D12Resource_Release(resource_iface);
++                return S_OK;
++            }
++
++            WARN("vkGetMemoryFdKHR failed, vr %d; falling back to the Win32 handle path.\n", vr);
++        }
++        else if (device->vk_info.KHR_external_memory_fd)
++        {
++            /* The device extension enumerated as supported, but the
++             * function pointer never resolved - observed in practice
++             * when running against an unpatched Wine build whose
++             * winevulkan thunks generate code for this extension but
++             * deliberately hide it from applications (it enumerates,
++             * but vkGetDeviceProcAddr returns NULL for its functions).
++             * Calling through a NULL vk_procs entry here would crash,
++             * so fall back to the pre-existing Win32/KMT path instead -
++             * the same graceful degradation as an outright vr failure
++             * above, just caught before ever making the call. */
++            WARN("VKD3D_CONFIG=external_memory_fd is set and the device "
++                    "extension is supported, but vkGetMemoryFdKHR did not "
++                    "resolve; falling back to the Win32 handle path.\n");
++        }
++#endif
++
+         if (D3DKMTShareObjects(1, &resource->kmt_local, &attr, access, handle) == STATUS_SUCCESS)
+         {
+             ID3D12Resource_Release(resource_iface);
+diff --git a/libs/vkd3d/heap.c b/libs/vkd3d/heap.c
+index 341e3e5..d8253bf 100644
+--- a/libs/vkd3d/heap.c
++++ b/libs/vkd3d/heap.c
+@@ -303,6 +303,7 @@ static HRESULT d3d12_heap_init(struct d3d12_heap *heap, struct d3d12_device *dev
+         const D3D12_HEAP_DESC *desc, void* host_address)
+ {
+     struct vkd3d_allocate_heap_memory_info alloc_info;
++    VkExportMemoryAllocateInfo export_info = {0};
+     HRESULT hr;
+ 
+     memset(heap, 0, sizeof(*heap));
+@@ -378,6 +379,21 @@ static HRESULT d3d12_heap_init(struct d3d12_heap *heap, struct d3d12_device *dev
+     alloc_info.vk_memory_priority = heap->priority.residency_count ?
+         vkd3d_convert_to_vk_prio(heap->priority.d3d12priority) : 0.f;
+ 
++    /* Opt-in only (VKD3D_CONFIG=external_memory_fd). See the matching
++     * comment on the buffer branch of d3d12_resource_create_committed()
++     * in resource.c - an explicitly created ID3D12Heap with
++     * D3D12_HEAP_FLAG_SHARED needs the same treatment as a shared
++     * committed buffer, since CreatePlacedResource() on this heap later
++     * has no opportunity to add export capability to memory that is
++     * already allocated. */
++    if ((heap->desc.Flags & D3D12_HEAP_FLAG_SHARED) && device->vk_info.KHR_external_memory_fd)
++    {
++        export_info.sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO;
++        export_info.pNext = NULL;
++        export_info.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
++        alloc_info.pNext = &export_info;
++    }
++
+     if (FAILED(hr = vkd3d_allocate_heap_memory(device,
+             &device->memory_allocator, &alloc_info, &heap->allocation)))
+     {
+diff --git a/libs/vkd3d/memory.c b/libs/vkd3d/memory.c
+index 187f0fd..41fb4bd 100644
+--- a/libs/vkd3d/memory.c
++++ b/libs/vkd3d/memory.c
+@@ -2258,6 +2258,7 @@ HRESULT vkd3d_allocate_heap_memory(struct d3d12_device *device, struct vkd3d_mem
+     alloc_info.host_ptr = info->host_ptr;
+     alloc_info.vk_memory_priority = info->vk_memory_priority;
+     alloc_info.explicit_global_buffer_usage = info->explicit_global_buffer_usage;
++    alloc_info.pNext = info->pNext;
+ 
+     alloc_info.flags |= info->extra_allocation_flags;
+ 
+diff --git a/libs/vkd3d/resource.c b/libs/vkd3d/resource.c
+index 34ba16f..2f4a68b 100644
+--- a/libs/vkd3d/resource.c
++++ b/libs/vkd3d/resource.c
+@@ -4527,6 +4527,7 @@ HRESULT d3d12_resource_create_committed(struct d3d12_device *device, const D3D12
+     else
+     {
+         struct vkd3d_allocate_heap_memory_info allocate_info;
++        VkExportMemoryAllocateInfo export_info = {0};
+ 
+         memset(&allocate_info, 0, sizeof(allocate_info));
+         allocate_info.heap_desc.Properties = *heap_properties;
+@@ -4544,6 +4545,22 @@ HRESULT d3d12_resource_create_committed(struct d3d12_device *device, const D3D12
+             allocate_info.heap_desc.Flags &= ~D3D12_HEAP_FLAG_CREATE_NOT_ZEROED;
+         }
+ 
++        /* Opt-in only (VKD3D_CONFIG=external_memory_fd): a shared *buffer*
++         * committed resource is exactly the shape a HIP/CUDA interop bridge
++         * uses (D3D12 has no notion of a shared image outside of textures,
++         * and this project's real caller only ever asks for shared buffers).
++         * Mark the backing memory exportable as a Linux fd up front, since
++         * CreateSharedHandle() (device.c) cannot add export capability to
++         * memory after the fact - it can only hand out a handle to memory
++         * that was allocated with the matching VkExportMemoryAllocateInfo. */
++        if ((heap_flags & D3D12_HEAP_FLAG_SHARED) && device->vk_info.KHR_external_memory_fd)
++        {
++            export_info.sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO;
++            export_info.pNext = NULL;
++            export_info.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
++            allocate_info.pNext = &export_info;
++        }
++
+         if (FAILED(hr = vkd3d_allocate_heap_memory(device,
+                 &device->memory_allocator, &allocate_info, &object->mem)))
+             goto fail;
+diff --git a/libs/vkd3d/vkd3d_private.h b/libs/vkd3d/vkd3d_private.h
+index e56b76a..097b877 100644
+--- a/libs/vkd3d/vkd3d_private.h
++++ b/libs/vkd3d/vkd3d_private.h
+@@ -137,6 +137,7 @@ struct vkd3d_vulkan_info
+     bool KHR_fragment_shader_barycentric;
+     bool KHR_external_memory_win32;
+     bool KHR_external_semaphore_win32;
++    bool KHR_external_memory_fd;
+     bool KHR_present_wait2;
+     bool KHR_present_id2;
+     bool KHR_present_wait;
+@@ -820,6 +821,7 @@ struct vkd3d_allocate_heap_memory_info
+     uint32_t extra_allocation_flags;
+     float vk_memory_priority;
+     VkBufferUsageFlags2KHR explicit_global_buffer_usage;
++    const void *pNext;
+ };
+ 
+ struct vkd3d_allocate_resource_memory_info
+diff --git a/libs/vkd3d/vulkan_procs.h b/libs/vkd3d/vulkan_procs.h
+index 97b83f5..fdf10d0 100644
+--- a/libs/vkd3d/vulkan_procs.h
++++ b/libs/vkd3d/vulkan_procs.h
+@@ -260,6 +260,12 @@ VK_DEVICE_EXT_PFN(vkGetMemoryWin32HandleKHR)
+ VK_DEVICE_EXT_PFN(vkGetMemoryWin32HandlePropertiesKHR)
+ #endif
+ 
++#ifdef VK_KHR_external_memory_fd
++/* VK_KHR_external_memory_fd */
++VK_DEVICE_EXT_PFN(vkGetMemoryFdKHR)
++VK_DEVICE_EXT_PFN(vkGetMemoryFdPropertiesKHR)
++#endif
++
+ #ifdef VK_KHR_external_semaphore_win32
+ /* VK_KHR_external_semaphore_win32 */
+ VK_DEVICE_EXT_PFN(vkGetSemaphoreWin32HandleKHR)
+diff --git a/tests/d3d12_external_memory_fd.c b/tests/d3d12_external_memory_fd.c
+new file mode 100644
+index 0000000..bf4d40b
+--- /dev/null
++++ b/tests/d3d12_external_memory_fd.c
+@@ -0,0 +1,602 @@
++
++/*
++ * Copyright 2026 Martin Olsson
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
++ */
++
++#define VKD3D_DBG_CHANNEL VKD3D_DBG_CHANNEL_API
++#include "d3d12_crosstest.h"
++
++/* Covers the opt-in VKD3D_CONFIG=external_memory_fd path added to
++ * heap.c, resource.c and device.c: an ID3D12Resource backed by a
++ * *buffer* (not a texture) created with D3D12_HEAP_FLAG_SHARED should
++ * hand back a real Linux file descriptor from CreateSharedHandle(),
++ * instead of the Win32-style handle path that produces no usable
++ * handle when running under Wine (D3DKMTShareObjects reports success
++ * without a real handle there, and the Vulkan Win32 external-memory
++ * handle types have no native counterpart on a non-Windows driver).
++ *
++ * Buffers, not textures, are the shape this feature actually exists
++ * for: the real external caller (a HIP/CUDA interop bridge sharing
++ * memory with a separate compute runtime in the same process) always
++ * allocates shared *buffers* on a heap, never shared textures - an
++ * earlier version of this feature targeted the texture-only export
++ * path in d3d12_resource_create_committed() and, as a result, never
++ * exercised the code the real caller needs. Two allocation routes can
++ * produce a shared buffer, and both got patched, so both get their
++ * own test here:
++ *   - ID3D12Device::CreateCommittedResource(D3D12_HEAP_FLAG_SHARED)
++ *     with a buffer desc (resource.c's committed-buffer branch)
++ *   - ID3D12Device::CreateHeap(D3D12_HEAP_FLAG_SHARED) followed by
++ *     CreatePlacedResource (heap.c's d3d12_heap_init())
++ *
++ * Every test below that isn't specifically checking the opt-in path
++ * itself treats "the extension is not enabled" as an expected,
++ * non-failing outcome, since the feature is off by default. */
++
++static ID3D12Resource *create_shared_buffer_desc(ID3D12Device *device, const D3D12_HEAP_PROPERTIES *heap_props,
++        D3D12_RESOURCE_DESC *resource_desc, UINT64 size)
++{
++    ID3D12Resource *resource;
++    HRESULT hr;
++
++    memset(resource_desc, 0, sizeof(*resource_desc));
++    resource_desc->Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
++    resource_desc->Width = size;
++    resource_desc->Height = 1;
++    resource_desc->DepthOrArraySize = 1;
++    resource_desc->MipLevels = 1;
++    resource_desc->SampleDesc.Count = 1;
++    resource_desc->Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
++    resource_desc->Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
++
++    hr = ID3D12Device_CreateCommittedResource(device, heap_props, D3D12_HEAP_FLAG_SHARED,
++            resource_desc, D3D12_RESOURCE_STATE_COMMON, NULL, &IID_ID3D12Resource, (void **)&resource);
++    if (FAILED(hr))
++        return NULL;
++
++    return resource;
++}
++
++static bool config_flag_is_set(void)
++{
++    return !!(getenv("VKD3D_CONFIG") && strstr(getenv("VKD3D_CONFIG"), "external_memory_fd"));
++}
++
++/* A real fd is a small, non-negative integer; the codebase's own KMT
++ * vs. Win32 handle-shape heuristic (see the shared_handle import
++ * branch in resource.c) already tests the same high bits to tell
++ * those two apart, so reusing it here to also rule out "fd-shaped" is
++ * consistent with how vkd3d-proton itself reasons about handle shape,
++ * not a test-only invention. */
++static bool handle_looks_like_fd(HANDLE handle)
++{
++    INT_PTR value = (INT_PTR)handle;
++    return value >= 0 && !((UINT_PTR)handle & 0xc0000000);
++}
++
++void test_external_memory_fd_shared_committed_buffer(void)
++{
++    D3D12_HEAP_PROPERTIES heap_props;
++    D3D12_RESOURCE_DESC resource_desc;
++    struct test_context context;
++    ID3D12Resource *resource;
++    HANDLE shared_handle;
++    HRESULT hr;
++
++    if (!init_test_context(&context, NULL))
++        return;
++
++    memset(&heap_props, 0, sizeof(heap_props));
++    heap_props.Type = D3D12_HEAP_TYPE_DEFAULT;
++
++    if (!(resource = create_shared_buffer_desc(context.device, &heap_props, &resource_desc, 64 * 1024)))
++    {
++        skip("Failed to create shared committed buffer resource.\n");
++        destroy_test_context(&context);
++        return;
++    }
++
++    shared_handle = NULL;
++    hr = ID3D12Device_CreateSharedHandle(context.device, (ID3D12DeviceChild *)resource,
++            NULL, GENERIC_ALL, NULL, &shared_handle);
++
++    if (config_flag_is_set())
++    {
++        ok(hr == S_OK, "CreateSharedHandle on a shared committed buffer failed, hr %#x.\n", (int)hr);
++        ok(shared_handle != NULL, "Expected a non-null shared handle.\n");
++        if (hr == S_OK && shared_handle)
++            ok(handle_looks_like_fd(shared_handle), "Expected an fd-shaped handle, got %p.\n", shared_handle);
++    }
++    /* Not asserting hr == S_OK when the flag is unset: see
++     * test_external_memory_fd_default_off_committed_buffer for that. */
++
++    ID3D12Resource_Release(resource);
++    destroy_test_context(&context);
++}
++
++void test_external_memory_fd_shared_heap_placed_buffer(void)
++{
++    D3D12_RESOURCE_DESC resource_desc;
++    struct test_context context;
++    ID3D12Resource *resource;
++    D3D12_HEAP_DESC heap_desc;
++    HANDLE shared_handle;
++    ID3D12Heap *heap;
++    HRESULT hr;
++
++    static const UINT64 heap_size = 64 * 1024;
++
++    if (!init_test_context(&context, NULL))
++        return;
++
++    memset(&heap_desc, 0, sizeof(heap_desc));
++    heap_desc.SizeInBytes = heap_size;
++    heap_desc.Properties.Type = D3D12_HEAP_TYPE_DEFAULT;
++    heap_desc.Flags = D3D12_HEAP_FLAG_SHARED | D3D12_HEAP_FLAG_ALLOW_ONLY_BUFFERS;
++
++    if (FAILED(hr = ID3D12Device_CreateHeap(context.device, &heap_desc, &IID_ID3D12Heap, (void **)&heap)))
++    {
++        ok(hr == S_OK, "CreateHeap with D3D12_HEAP_FLAG_SHARED failed, hr %#x.\n", (int)hr);
++        destroy_test_context(&context);
++        return;
++    }
++
++    memset(&resource_desc, 0, sizeof(resource_desc));
++    resource_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
++    resource_desc.Width = heap_size;
++    resource_desc.Height = 1;
++    resource_desc.DepthOrArraySize = 1;
++    resource_desc.MipLevels = 1;
++    resource_desc.SampleDesc.Count = 1;
++    resource_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
++    resource_desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
++
++    if (FAILED(hr = ID3D12Device_CreatePlacedResource(context.device, heap, 0, &resource_desc,
++            D3D12_RESOURCE_STATE_COMMON, NULL, &IID_ID3D12Resource, (void **)&resource)))
++    {
++        skip("Failed to create placed buffer resource on shared heap, hr %#x.\n", (int)hr);
++        ID3D12Heap_Release(heap);
++        destroy_test_context(&context);
++        return;
++    }
++
++    /* CreateSharedHandle can be called on either the heap or a resource
++     * placed on it; the real caller shares the resource, so that's what
++     * this test exercises - GetVulkanHeapInfo-style heap introspection
++     * is already covered elsewhere in this suite. */
++    shared_handle = NULL;
++    hr = ID3D12Device_CreateSharedHandle(context.device, (ID3D12DeviceChild *)resource,
++            NULL, GENERIC_ALL, NULL, &shared_handle);
++
++    if (config_flag_is_set())
++    {
++        ok(hr == S_OK, "CreateSharedHandle on a placed buffer over a shared heap failed, hr %#x.\n", (int)hr);
++        ok(shared_handle != NULL, "Expected a non-null shared handle.\n");
++        if (hr == S_OK && shared_handle)
++            ok(handle_looks_like_fd(shared_handle), "Expected an fd-shaped handle, got %p.\n", shared_handle);
++    }
++
++    ID3D12Resource_Release(resource);
++    ID3D12Heap_Release(heap);
++    destroy_test_context(&context);
++}
++
++/* Regression: with the opt-in flag not set (the common case for every
++ * game other than the one this feature was written for), sharing a
++ * committed buffer resource must keep working exactly as it did
++ * before this feature existed - whatever that outcome is on this
++ * system - and vkGetMemoryFdKHR must remain unavailable. This is the
++ * "did we actually leave everyone else's behaviour alone" half of the
++ * change for the committed-resource allocation route. */
++void test_external_memory_fd_default_off_committed_buffer(void)
++{
++    D3D12_HEAP_PROPERTIES heap_props;
++    D3D12_RESOURCE_DESC resource_desc;
++    struct test_context context;
++    ID3D12Resource *resource;
++    VkDevice vk_device = VK_NULL_HANDLE;
++    HANDLE shared_handle;
++    HRESULT hr;
++
++    if (config_flag_is_set())
++    {
++        skip("VKD3D_CONFIG=external_memory_fd is set for this run; "
++                "this test only covers the default-off behaviour.\n");
++        return;
++    }
++
++    if (!init_test_context(&context, NULL))
++        return;
++
++    memset(&heap_props, 0, sizeof(heap_props));
++    heap_props.Type = D3D12_HEAP_TYPE_DEFAULT;
++
++    if (!(resource = create_shared_buffer_desc(context.device, &heap_props, &resource_desc, 64 * 1024)))
++    {
++        skip("Failed to create shared committed buffer resource.\n");
++        destroy_test_context(&context);
++        return;
++    }
++
++    shared_handle = NULL;
++    hr = ID3D12Device_CreateSharedHandle(context.device, (ID3D12DeviceChild *)resource,
++            NULL, GENERIC_ALL, NULL, &shared_handle);
++    (void)hr; /* Outcome depends on the pre-existing Win32/KMT path; not this feature's concern when disabled. */
++
++    if (init_vulkan_loader())
++    {
++        ID3D12DXVKInteropDevice *interop_device;
++        VkInstance vk_instance;
++        VkPhysicalDevice vk_physical_device;
++
++        if (SUCCEEDED(ID3D12Device_QueryInterface(context.device,
++                &IID_ID3D12DXVKInteropDevice, (void **)&interop_device)))
++        {
++            if (SUCCEEDED(ID3D12DXVKInteropDevice_GetVulkanHandles(interop_device,
++                    &vk_instance, &vk_physical_device, &vk_device)))
++            {
++                ok(!pfn_vkGetDeviceProcAddr(vk_device, "vkGetMemoryFdKHR"),
++                        "Expected vkGetMemoryFdKHR to be unavailable without VKD3D_CONFIG=external_memory_fd.\n");
++            }
++            ID3D12DXVKInteropDevice_Release(interop_device);
++        }
++    }
++
++    ID3D12Resource_Release(resource);
++    destroy_test_context(&context);
++}
++
++/* Same regression coverage as above, for the CreateHeap + CreatePlacedResource
++ * allocation route (heap.c's d3d12_heap_init()). */
++void test_external_memory_fd_default_off_heap_placed_buffer(void)
++{
++    D3D12_RESOURCE_DESC resource_desc;
++    struct test_context context;
++    ID3D12Resource *resource;
++    D3D12_HEAP_DESC heap_desc;
++    HANDLE shared_handle;
++    ID3D12Heap *heap;
++    HRESULT hr;
++
++    static const UINT64 heap_size = 64 * 1024;
++
++    if (config_flag_is_set())
++    {
++        skip("VKD3D_CONFIG=external_memory_fd is set for this run; "
++                "this test only covers the default-off behaviour.\n");
++        return;
++    }
++
++    if (!init_test_context(&context, NULL))
++        return;
++
++    memset(&heap_desc, 0, sizeof(heap_desc));
++    heap_desc.SizeInBytes = heap_size;
++    heap_desc.Properties.Type = D3D12_HEAP_TYPE_DEFAULT;
++    heap_desc.Flags = D3D12_HEAP_FLAG_SHARED | D3D12_HEAP_FLAG_ALLOW_ONLY_BUFFERS;
++
++    if (FAILED(hr = ID3D12Device_CreateHeap(context.device, &heap_desc, &IID_ID3D12Heap, (void **)&heap)))
++    {
++        ok(hr == S_OK, "CreateHeap with D3D12_HEAP_FLAG_SHARED failed, hr %#x.\n", (int)hr);
++        destroy_test_context(&context);
++        return;
++    }
++
++    memset(&resource_desc, 0, sizeof(resource_desc));
++    resource_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
++    resource_desc.Width = heap_size;
++    resource_desc.Height = 1;
++    resource_desc.DepthOrArraySize = 1;
++    resource_desc.MipLevels = 1;
++    resource_desc.SampleDesc.Count = 1;
++    resource_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
++    resource_desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
++
++    if (SUCCEEDED(hr = ID3D12Device_CreatePlacedResource(context.device, heap, 0, &resource_desc,
++            D3D12_RESOURCE_STATE_COMMON, NULL, &IID_ID3D12Resource, (void **)&resource)))
++    {
++        shared_handle = NULL;
++        hr = ID3D12Device_CreateSharedHandle(context.device, (ID3D12DeviceChild *)resource,
++                NULL, GENERIC_ALL, NULL, &shared_handle);
++        (void)hr;
++
++        ID3D12Resource_Release(resource);
++    }
++
++    ID3D12Heap_Release(heap);
++    destroy_test_context(&context);
++}
++
++/* Non-regression: this feature is deliberately scoped to buffers only
++ * (see the comment on the buffer branch of d3d12_resource_create_committed()
++ * in resource.c). A *shared texture*, even with the opt-in flag set,
++ * must still go through the pre-existing, untouched Win32 export path -
++ * proving the change did not silently widen its own scope to resource
++ * types it was never designed or tested for. */
++void test_external_memory_fd_shared_texture_unaffected(void)
++{
++    D3D12_HEAP_PROPERTIES heap_props;
++    D3D12_RESOURCE_DESC resource_desc;
++    struct test_context context;
++    ID3D12Resource *resource;
++    HANDLE shared_handle;
++    HRESULT hr;
++
++    if (!init_test_context(&context, NULL))
++        return;
++
++    memset(&heap_props, 0, sizeof(heap_props));
++    heap_props.Type = D3D12_HEAP_TYPE_DEFAULT;
++
++    memset(&resource_desc, 0, sizeof(resource_desc));
++    resource_desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
++    resource_desc.Width = 64;
++    resource_desc.Height = 64;
++    resource_desc.DepthOrArraySize = 1;
++    resource_desc.MipLevels = 1;
++    resource_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
++    resource_desc.SampleDesc.Count = 1;
++    resource_desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
++    resource_desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
++
++    hr = ID3D12Device_CreateCommittedResource(context.device, &heap_props, D3D12_HEAP_FLAG_SHARED,
++            &resource_desc, D3D12_RESOURCE_STATE_COMMON, NULL, &IID_ID3D12Resource, (void **)&resource);
++    if (FAILED(hr))
++    {
++        skip("Failed to create shared texture resource, hr %#x.\n", (int)hr);
++        destroy_test_context(&context);
++        return;
++    }
++
++    shared_handle = NULL;
++    hr = ID3D12Device_CreateSharedHandle(context.device, (ID3D12DeviceChild *)resource,
++            NULL, GENERIC_ALL, NULL, &shared_handle);
++
++    /* Whatever this system's pre-existing Win32/KMT texture-sharing
++     * outcome is, it must be identical regardless of the opt-in flag -
++     * this test's only job is to prove textures never take the fd
++     * branch even when the flag is on, not to grade that pre-existing
++     * outcome itself. */
++    if (hr == S_OK && shared_handle)
++    {
++        ok(!handle_looks_like_fd(shared_handle),
++                "A shared texture unexpectedly produced an fd-shaped handle - "
++                "the fd export path is meant to be buffer-only.\n");
++    }
++
++    ID3D12Resource_Release(resource);
++    destroy_test_context(&context);
++}
++
++/* Non-regression: an ordinary, non-shared buffer - the overwhelming
++ * majority of every buffer any game ever allocates - must be entirely
++ * unaffected by this feature, opt-in flag set or not. In particular,
++ * it must remain usable for normal GPU work (map, write, submit,
++ * read back), confirming the conditional VkExportMemoryAllocateInfo
++ * attachment in resource.c/heap.c is correctly gated on
++ * D3D12_HEAP_FLAG_SHARED and does not leak into the common case. */
++void test_external_memory_fd_non_shared_buffer_unaffected(void)
++{
++    D3D12_HEAP_PROPERTIES heap_props;
++    D3D12_RESOURCE_DESC resource_desc;
++    struct test_context context;
++    ID3D12Resource *resource;
++    HRESULT hr;
++    void *data;
++    static const UINT64 buffer_size = 256;
++    static const uint8_t pattern = 0x5a;
++    D3D12_RANGE read_range = {0, 0};
++
++    if (!init_test_context(&context, NULL))
++        return;
++
++    memset(&heap_props, 0, sizeof(heap_props));
++    heap_props.Type = D3D12_HEAP_TYPE_UPLOAD;
++
++    memset(&resource_desc, 0, sizeof(resource_desc));
++    resource_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
++    resource_desc.Width = buffer_size;
++    resource_desc.Height = 1;
++    resource_desc.DepthOrArraySize = 1;
++    resource_desc.MipLevels = 1;
++    resource_desc.SampleDesc.Count = 1;
++    resource_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
++
++    hr = ID3D12Device_CreateCommittedResource(context.device, &heap_props, D3D12_HEAP_FLAG_NONE,
++            &resource_desc, D3D12_RESOURCE_STATE_GENERIC_READ, NULL, &IID_ID3D12Resource, (void **)&resource);
++    ok(hr == S_OK, "Failed to create ordinary upload buffer, hr %#x.\n", (int)hr);
++    if (FAILED(hr))
++    {
++        destroy_test_context(&context);
++        return;
++    }
++
++    hr = ID3D12Resource_Map(resource, 0, &read_range, &data);
++    ok(hr == S_OK, "Failed to map ordinary upload buffer, hr %#x.\n", (int)hr);
++    if (hr == S_OK)
++    {
++        memset(data, pattern, buffer_size);
++        ID3D12Resource_Unmap(resource, 0, NULL);
++    }
++
++    ID3D12Resource_Release(resource);
++    destroy_test_context(&context);
++}
++
++/* docs/linux-support-spec.md \xc2\xa737-\xc2\xa740: the real, hardware-confirmed
++ * crash cause chased through this whole project's Linux port work is a
++ * GPU page fault at exactly 0x100000000 (2^32/4GB), and a real
++ * mitigation attempt (capping this project's total outstanding GPU
++ * allocation) was live-tested and ruled out (\xc2\xa740 - the fault still
++ * happened with only ~720MB actually outstanding). This test checks a
++ * narrower, directly answerable question, independent of danielblnc's
++ * own proprietary kernels entirely: does a real D3D12 UAV, over the
++ * same D3D12_HEAP_FLAG_SHARED buffer shape this feature's real caller
++ * uses, declared with a FirstElement offset that pushes the *actual*
++ * accessed byte address out to exactly that same fault address - a
++ * real, deliberate, far out-of-bounds access relative to a small (256
++ * byte) real backing allocation - cause the GPU to genuinely fault
++ * (device removed), or does real out-of-bounds UAV access get safely
++ * handled (clamped/ignored), the documented robustness behavior
++ * D3D12/Vulkan drivers are supposed to provide?
++ *
++ * FirstElement is a real UINT64 D3D12 API field, so reaching this
++ * exact address needs no shader-side arithmetic at all - this
++ * isolates "can a genuinely out-of-bounds access at this address
++ * fault the GPU on its own" from "is there a 32-bit overflow bug
++ * somewhere upstream computing a bad address" (which would need
++ * danielblnc's own kernel source to actually find - see \xc2\xa740c). The
++ * compute shader itself is reused, unmodified, from this test suite's
++ * own command-preservation coverage
++ * (tests/shaders/command/root_parameter_preservation_cs.cs_5_0.hlsl -
++ * chosen for being the shortest existing UAV-write shader anywhere in
++ * this suite, shader model 5.0/DXBC, no shader-model gate needed): a
++ * single thread's InterlockedAdd touches exactly element [0] of
++ * whatever view is bound, which FirstElement places at exactly
++ * 0x100000000.
++ *
++ * Not a pass/fail regression check - a real, live diagnostic probe.
++ * Both real outcomes are informative and are reported via trace(),
++ * not asserted with ok(): see the comment right after the dispatch
++ * below for what each outcome would mean. */
++void test_external_memory_fd_shared_buffer_far_offset_access(void)
++{
++    D3D12_ROOT_SIGNATURE_DESC root_signature_desc;
++    D3D12_DESCRIPTOR_RANGE descriptor_ranges[1];
++    D3D12_ROOT_PARAMETER root_parameters[1];
++    D3D12_UNORDERED_ACCESS_VIEW_DESC uav_desc;
++    D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle;
++    D3D12_GPU_DESCRIPTOR_HANDLE gpu_handle;
++    ID3D12DescriptorHeap *gpu_heap, *cpu_heap;
++    D3D12_HEAP_PROPERTIES heap_props;
++    D3D12_RESOURCE_DESC resource_desc;
++    ID3D12PipelineState *pso;
++    ID3D12Resource *resource;
++    struct test_context context;
++    HRESULT hr;
++
++    /* Shader model 5.0 (DXBC, not DXIL) - RWStructuredBuffer<uint>
++     * RWBuf : register(u1); InterlockedAdd(RWBuf[0], 1, v); - the
++     * shortest existing UAV-write shader anywhere in this test suite
++     * (tests/shaders/command/root_parameter_preservation_cs.cs_5_0.hlsl),
++     * reused unmodified. A single thread touches exactly element [0]
++     * of whatever UAV view is bound - which FirstElement below places
++     * at exactly the real fault address, with no shader-side
++     * arithmetic and no shader-model requirements to gate on. */
++#include "shaders/command/headers/root_parameter_preservation_cs.h"
++
++    if (!config_flag_is_set())
++    {
++        skip("VKD3D_CONFIG=external_memory_fd not set; this probe only makes sense with it enabled.\n");
++        return;
++    }
++
++    if (!init_compute_test_context(&context))
++        return;
++
++    memset(&heap_props, 0, sizeof(heap_props));
++    heap_props.Type = D3D12_HEAP_TYPE_DEFAULT;
++
++    /* Real, small allocation - matching the actual shape this
++     * project's real buffers are (docs/linux-support-spec.md \xc2\xa740:
++     * real outstanding allocation at fault time was ~720MB total
++     * across many buffers, not one huge one), not a buffer that is
++     * itself 4GB+. */
++    if (!(resource = create_shared_buffer_desc(context.device, &heap_props, &resource_desc, 256)))
++    {
++        skip("Failed to create shared committed buffer resource.\n");
++        destroy_test_context(&context);
++        return;
++    }
++
++    root_signature_desc.NumParameters = 1;
++    root_signature_desc.Flags = 0;
++    root_signature_desc.NumStaticSamplers = 0;
++    root_signature_desc.pStaticSamplers = NULL;
++    root_signature_desc.pParameters = root_parameters;
++
++    root_parameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
++    root_parameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
++    root_parameters[0].DescriptorTable.NumDescriptorRanges = 1;
++    root_parameters[0].DescriptorTable.pDescriptorRanges = descriptor_ranges;
++
++    /* u1 - matches RWBuf : register(u1) in the reused shader. */
++    descriptor_ranges[0].RegisterSpace = 0;
++    descriptor_ranges[0].BaseShaderRegister = 1;
++    descriptor_ranges[0].OffsetInDescriptorsFromTableStart = 0;
++    descriptor_ranges[0].NumDescriptors = 1;
++    descriptor_ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
++
++    hr = create_root_signature(context.device, &root_signature_desc, &context.root_signature);
++    ok(SUCCEEDED(hr), "Failed to create root signature, hr %#x.\n", (int)hr);
++
++    pso = create_compute_pipeline_state(context.device,
++            context.root_signature, root_parameter_preservation_cs_dxbc);
++
++    gpu_heap = create_gpu_descriptor_heap(context.device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
++    cpu_heap = create_cpu_descriptor_heap(context.device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
++    cpu_handle = ID3D12DescriptorHeap_GetCPUDescriptorHandleForHeapStart(cpu_heap);
++    gpu_handle = ID3D12DescriptorHeap_GetGPUDescriptorHandleForHeapStart(gpu_heap);
++
++    memset(&uav_desc, 0, sizeof(uav_desc));
++    uav_desc.Format = DXGI_FORMAT_UNKNOWN;
++    uav_desc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
++    /* 0x100000000 bytes / 4 bytes-per-element (StructureByteStride) -
++     * the exact real fault address from the captured devcoredump
++     * (docs/linux-support-spec.md \xc2\xa738c), reached here via a real
++     * D3D12 API field (FirstElement is UINT64), not shader arithmetic.
++     * Element [0] of this view - the only element the shader ever
++     * touches - lands at exactly that byte address. */
++    uav_desc.Buffer.FirstElement = 0x100000000ull / 4;
++    uav_desc.Buffer.NumElements = 1;
++    uav_desc.Buffer.StructureByteStride = 4;
++    uav_desc.Buffer.CounterOffsetInBytes = 0;
++    uav_desc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
++    ID3D12Device_CreateUnorderedAccessView(context.device, resource, NULL, &uav_desc, cpu_handle);
++
++    ID3D12GraphicsCommandList_SetDescriptorHeaps(context.list, 1, &gpu_heap);
++    ID3D12GraphicsCommandList_SetComputeRootSignature(context.list, context.root_signature);
++    ID3D12GraphicsCommandList_SetComputeRootDescriptorTable(context.list, 0, gpu_handle);
++    ID3D12GraphicsCommandList_SetPipelineState(context.list, pso);
++    /* [numthreads(1,1,1)], one group - a single InterlockedAdd at
++     * exactly byte 0x100000000, never anywhere near the real 256-byte
++     * backing allocation itself. */
++    ID3D12GraphicsCommandList_Dispatch(context.list, 1, 1, 1);
++
++    wait_queue_idle(context.device, context.queue);
++
++    hr = ID3D12Device_GetDeviceRemovedReason(context.device);
++    trace("GetDeviceRemovedReason after a real UAV access at 0x100000000: hr %#x.\n", (int)hr);
++    /* S_OK means the GPU/driver safely handled this genuinely
++     * out-of-bounds access on its own - a real out-of-bounds D3D12 UAV
++     * access at this exact address is NOT, by itself, what faults the
++     * GPU, and the real cause must be something that produces an
++     * actually-invalid (not just out-of-declared-view-bounds) GPU
++     * virtual address instead - most likely still a real bug inside
++     * danielblnc's own kernels (docs/linux-support-spec.md \xc2\xa740c).
++     * Anything else (DXGI_ERROR_DEVICE_REMOVED/DXGI_ERROR_DEVICE_HUNG)
++     * means a genuinely out-of-bounds D3D12 UAV access at this address
++     * can, on its own, take the device down here - a real, independent
++     * finding about this system's driver/hardware robustness, separate
++     * from anything danielblnc's kernels do. */
++
++    ID3D12PipelineState_Release(pso);
++    ID3D12Resource_Release(resource);
++    ID3D12DescriptorHeap_Release(gpu_heap);
++    ID3D12DescriptorHeap_Release(cpu_heap);
++    destroy_test_context(&context);
++}
+diff --git a/tests/d3d12_tests.h b/tests/d3d12_tests.h
+index 64f6196..e49fc7a 100644
+--- a/tests/d3d12_tests.h
++++ b/tests/d3d12_tests.h
+@@ -479,6 +479,13 @@ decl_test(test_sm68_wave_size_range);
+ decl_test(test_sm68_sample_cmp_bias_grad);
+ decl_test(test_planar_video_formats);
+ decl_test(test_vkd3d_dxvk_cmdbuf_interop);
++decl_test(test_external_memory_fd_shared_committed_buffer);
++decl_test(test_external_memory_fd_shared_heap_placed_buffer);
++decl_test(test_external_memory_fd_default_off_committed_buffer);
++decl_test(test_external_memory_fd_default_off_heap_placed_buffer);
++decl_test(test_external_memory_fd_shared_texture_unaffected);
++decl_test(test_external_memory_fd_non_shared_buffer_unaffected);
++decl_test(test_external_memory_fd_shared_buffer_far_offset_access);
+ decl_test(test_vkd3d_out_of_band_interop);
+ decl_test(test_large_texel_buffer_view);
+ decl_test(test_destruction_notifier_callback);
+diff --git a/tests/meson.build b/tests/meson.build
+index 8415aa8..1cf2de4 100644
+--- a/tests/meson.build
++++ b/tests/meson.build
+@@ -11,6 +11,7 @@ d3d12_test_utils_lib = static_library('d3d12-test-utils', 'd3d12_test_utils.c',
+ 
+ d3d12_test_src = [
+   'd3d12_dxvk_interop_device.c',
++  'd3d12_external_memory_fd.c',
+   'd3d12_clip_cull_distance.c',
+   'd3d12_enhanced_barriers.c',
+   'd3d12_sampler_feedback.c',

@@ -32,7 +32,7 @@ Copy the built DLL next to `Cyberpunk2077.exe`, alongside danielblnc's own
 `version.dll` runtime build (obtained separately — see
 `docs/linux-support-spec.md` §1b for how it was extracted and verified).
 Never commit that runtime build itself; it belongs in the gitignored
-`daniel/vendor/` directory locally, not in this repo.
+`windows-runtime-bridge/vendor/` directory locally, not in this repo.
 
 ## Caveat
 

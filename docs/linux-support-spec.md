@@ -886,7 +886,7 @@ Roughly in the order they should be investigated (cheap/read-only first):
    sub-questions.**
 
    **Method:** built a clean-room stub `amdhip64_7.dll` (Rust cdylib,
-   `daniel/hip-stub/`, no proprietary code — just the ~29 public HIP
+   `windows-runtime-bridge/hip-stub/`, no proprietary code — just the ~29 public HIP
    function names from §3's import table, wired to trivial
    "unsupported"/"no device" responses, with every call logged to
    `amdhip64_7_stub.log`). This exists solely to satisfy the Windows
@@ -975,7 +975,7 @@ Roughly in the order they should be investigated (cheap/read-only first):
    Wine-unixlib approach from earlier in this investigation remains a
    possible later optimization, not a current blocker.
 
-   **Revised design** (now built as `daniel/hip-bridge/`, two Rust
+   **Revised design** (now built as `windows-runtime-bridge/hip-bridge/`, two Rust
    programs instead of one native module):
    - `native-daemon`: a plain native Linux binary. Loads
      `libamdhip64.so.7` via `dlopen`/`dlsym` at runtime (no ROCm dev
@@ -1269,7 +1269,7 @@ production shim.
 - `WINEDLLOVERRIDES="version=n,b"` in launch options either way (§8
   item 5's pitfall isn't architecture-specific).
 
-**Socket-IPC (what's built and proven today, `daniel/hip-bridge/`)** —
+**Socket-IPC (what's built and proven today, `windows-runtime-bridge/hip-bridge/`)** —
 sketched install steps:
 ```
 1. Install ROCm for your GPU (rocminfo/rocm-smi + libamdhip64 runtime).
@@ -1594,7 +1594,7 @@ and proven stable under real gameplay
 Following §11a's confirmed unixlib compatibility, stage 2's entire proven
 logic (fat-binary capture, function resolution, pointer handling - now
 trivial, see below) was ported from the socket-IPC transport onto a real
-Wine-unixlib module (`daniel/hip-unixlib/`): `pe_shim.c` (PE side, C,
+Wine-unixlib module (`windows-runtime-bridge/hip-unixlib/`): `pe_shim.c` (PE side, C,
 built with `winegcc`) paired with `native.c`/`registry.c` (native side,
 built with `clang -DWINE_UNIX_LIB`). Full parity with the Rust
 `hip-stub`'s function list, same real/stubbed split.
@@ -2058,7 +2058,7 @@ the real game. Not started; this section is scoping only.
 
 ## 16. §15h.2 spike result: PE-side Vulkan cannot export an opaque fd (2026-09-13)
 
-Built and ran a throwaway spike (`daniel/hip-unixlib`'s
+Built and ran a throwaway spike (`windows-runtime-bridge/hip-unixlib`'s
 `DlssnrVulkanFdSpikeW`, invoked via `rundll32 amdhip64_7.dll,
 DlssnrVulkanFdSpike` against the real Cyberpunk Proton prefix) to answer
 §15h.2: does calling Vulkan directly from PE code (Wine's own
@@ -2110,7 +2110,7 @@ finding is reviewed - it was never meant to be permanent.
 ## 17. §15h.1 spike result: `CreateSharedHandle` confirmed broken in a clean, minimal repro; interop query path confirmed working (2026-09-13)
 
 Built and ran a second throwaway spike (`DlssnrD3D12InteropSpikeW` in
-`daniel/hip-unixlib/pe_shim.c`, same `rundll32` harness as §16) that
+`windows-runtime-bridge/hip-unixlib/pe_shim.c`, same `rundll32` harness as §16) that
 creates its own real D3D12 device via the real `d3d12.dll`
 (vkd3d-proton), allocates a plain `D3D12_HEAP_FLAG_SHARED` buffer
 (8 MiB, matching a real size seen in §14's live log) with no
@@ -2800,7 +2800,7 @@ alone would be reasonable as a preparatory contribution, but it would
 not, by itself, unlock this project's feature.
 
 Test artifacts from this investigation (`DlssnrPatchTestSpikeW` and the
-`HIP_CALL_TEST_HEAP_FD_IMPORT` opcode in `daniel/hip-unixlib`, the
+`HIP_CALL_TEST_HEAP_FD_IMPORT` opcode in `windows-runtime-bridge/hip-unixlib`, the
 duplicated `Proton 11.0 - vkd3d-patch-test` directory, and the
 throwaway `.hip-bridge-patch-test-prefix`) should be cleaned up now
 that the question is answered. The vkd3d-proton patch itself
@@ -2875,7 +2875,7 @@ back up.
   kept only as a reference for how the generator behaves upstream; not
   ABI-compatible with Proton 11.0 directly, not needed for further work
   here.
-- This project's own production files (`daniel/hip-unixlib/`) are back
+- This project's own production files (`windows-runtime-bridge/hip-unixlib/`) are back
   to their clean, working, pre-spike state and redeployed to the real
   Proton 11.0 install - confirmed unaffected by any of this session's
   patched-Proton testing (`d3d12core.dll`/`winevulkan.dll` in the real
@@ -3079,7 +3079,7 @@ failed (there was nothing to pair with), `DllMain` correctly returned
 `REDprelauncher.exe` down with it before the real game ever started.
 Not a design bug in the shim at all; fixed by copying the existing,
 already-built `amdhip64_7.dll`/`.so` pair from
-`daniel/hip-unixlib/{x86_64-windows,x86_64-unix}/` into the new
+`windows-runtime-bridge/hip-unixlib/{x86_64-windows,x86_64-unix}/` into the new
 build's `files/lib/wine/` directories, matching the original Proton
 11.0 install exactly.
 
@@ -3161,7 +3161,7 @@ in dlssnr_on_amd.ini
 Daniel's runtime checks the reported HIP runtime version against a
 specific known-good value (`70260201`) and warns when it doesn't
 match. Checked this project's own shim directly:
-`daniel/hip-unixlib/native.c`'s `unix_driver_get_version()` and
+`windows-runtime-bridge/hip-unixlib/native.c`'s `unix_driver_get_version()` and
 `unix_runtime_get_version()` - the functions that back
 `hipDriverGetVersion()`/`hipRuntimeGetVersion()` - are **stubs that
 hardcode `a->version = 0`** rather than forwarding to the real
@@ -3203,7 +3203,7 @@ was found and removed before testing began.
 
 ### 28a. The version-stub fix: implemented, tested, deployed - and cleared of blame
 
-`daniel/hip-unixlib/native.c`'s `unix_driver_get_version()` and
+`windows-runtime-bridge/hip-unixlib/native.c`'s `unix_driver_get_version()` and
 `unix_runtime_get_version()` were confirmed as genuine stubs
 (hardcoded `version = 0`, never calling the real
 `hipDriverGetVersion`/`hipRuntimeGetVersion` the way every other
@@ -3683,7 +3683,7 @@ be contributing.
 
 **Also implemented this session** (a small, targeted code change,
 not just analysis - explicitly requested): logging was added to every
-event/stream dispatch function in `daniel/hip-unixlib/native.c`
+event/stream dispatch function in `windows-runtime-bridge/hip-unixlib/native.c`
 (`hipEventCreate/Record/Synchronize/Query/ElapsedTime`,
 `hipStreamCreateWithFlags/Synchronize`) that was previously silent,
 and - the single most directly useful addition - `hipGetErrorString`
@@ -3720,9 +3720,9 @@ Stopping here for the night.
 not supported": fp8 instruction-support maturity for `gfx1201`, or
 running Ubuntu 26.04 (outside ROCm 7.1.1's documented OS support list
 for this GPU class). Rather than guess further, built
-`daniel/investigations/rocm_probe.c` - a small, standalone Linux program
+`windows-runtime-bridge/investigations/rocm_probe.c` - a small, standalone Linux program
 that `dlopen`s the real `libamdhip64.so.7` directly (the same
-technique `daniel/hip-unixlib` already uses, and for the same reason:
+technique `windows-runtime-bridge/hip-unixlib` already uses, and for the same reason:
 no HIP compiler or dev headers are installed on this system, so a real
 `.hip` source file compiled with `hipcc` was never an option here).
 
@@ -3875,10 +3875,10 @@ needed.
 ### 32a. `rocm_probe.c` extended - device-properties ABI and synchronous memcpy, both confirmed healthy
 
 Given the decision to hold off on upgrading, added two more checks to
-`daniel/investigations/rocm_probe.c` that needed no new packages and could
+`windows-runtime-bridge/investigations/rocm_probe.c` that needed no new packages and could
 be run immediately:
 
-- **`hipGetDevicePropertiesR0600` ABI sanity.** `daniel/hip-unixlib/
+- **`hipGetDevicePropertiesR0600` ABI sanity.** `windows-runtime-bridge/hip-unixlib/
   native.c` has always assumed this struct is exactly 1472 bytes
   (confirmed once before via compiler-based analysis, per §8/§12) but
   had never actually been exercised against a live call and checked
@@ -3907,7 +3907,7 @@ The one thing that remained genuinely untestable without a compiler -
 whether this GPU/ROCm combination actually executes real fp8
 instructions - now has a real test ready to go, once
 `libamd-comgr-dev` can be installed (needs `sudo`, not available
-during this remote session - see `daniel/investigations/README.md`).
+during this remote session - see `windows-runtime-bridge/investigations/README.md`).
 
 Found that `libamd-comgr3` (AMD's code-object-manager library - the
 compiler machinery HIP's own `hiprtc` convenience API sits on top of)
@@ -3916,7 +3916,7 @@ own archive has a `libamd-comgr-dev` package matching the installed
 runtime version *exactly* (`7.1.1+dfsg-0ubuntu1`) - headers only, no
 driver/runtime risk, trivially removable.
 
-Built `daniel/investigations/fp8_kernel_probe.c`: compiles two small,
+Built `windows-runtime-bridge/investigations/fp8_kernel_probe.c`: compiles two small,
 original, clean-room HIP kernels *from source, at runtime*, via
 comgr's own compile API, then loads and launches the result through
 the exact same `hipModuleLoadData`/`hipModuleGetFunction`/
@@ -4020,7 +4020,7 @@ kernel_fp8_decode (real __builtin_amdgcn_cvt_f32_fp8 call):
 
 Both kernels compiled, loaded via the real `hipModuleLoadData`/
 `hipModuleGetFunction`/`hipModuleLaunchKernel` calls
-`daniel/hip-unixlib/native.c` already uses for danielblnc's own
+`windows-runtime-bridge/hip-unixlib/native.c` already uses for danielblnc's own
 kernels, launched, and executed correctly - the fp8 one producing a
 byte-exact correct numerical result from a real fp8 decode
 instruction actually running on the GPU, not a fallback or emulated
@@ -4057,7 +4057,7 @@ remain, both narrower and more specific than before:
    way to find out for certain from a real live session, now with
    one major wrong theory eliminated first.
 
-`daniel/investigations/fp8_kernel_probe.c` and its README are updated to
+`windows-runtime-bridge/investigations/fp8_kernel_probe.c` and its README are updated to
 reflect the real, working, corrected version - including the two
 real mistakes found and fixed, kept in the code's own comments as a
 record of what was wrong and why, not silently cleaned up.
@@ -4065,7 +4065,7 @@ record of what was wrong and why, not silently cleaned up.
 ## 34. The real cause of "operation not supported" found and fixed - it was our own shim, not the GPU (2026-09-15)
 
 Candidate 2 from §33d turned out to be it, and the mechanism was
-mundane: a real bug in `daniel/hip-unixlib/pe_shim.c`, not any
+mundane: a real bug in `windows-runtime-bridge/hip-unixlib/pe_shim.c`, not any
 GPU/ROCm/fp8 limitation.
 
 ### 34a. Reading the actual crash-log context
@@ -4121,7 +4121,7 @@ every named stage, not a single kernel.
 
 ### 34c. The fix
 
-`native.c`'s `unix_memcpy` (`daniel/hip-unixlib/native.c:318-324`)
+`native.c`'s `unix_memcpy` (`windows-runtime-bridge/hip-unixlib/native.c:318-324`)
 already forwarded `kind` to the real `p_hipMemcpy` completely
 unmodified - it needed no change; real HIP fully supports device-to-
 device copies. The bug was entirely `pe_shim.c`'s gate rejecting the
@@ -4132,14 +4132,14 @@ Fixed by extracting the kind check into a small pure, testable module
 `hip_forward.c` pattern) rather than patching the inline check
 directly:
 
-- `daniel/hip-unixlib/memcpy_kind.h`/`.c` - defines the real
+- `windows-runtime-bridge/hip-unixlib/memcpy_kind.h`/`.c` - defines the real
   `HIP_MEMCPY_*` kind constants (0-4: `HostToHost`, `HostToDevice`,
   `DeviceToHost`, `DeviceToDevice`, `Default`) and
   `hip_memcpy_kind_supported(int kind)`, a pure range check.
 - `pe_shim.c`'s `memcpy_forward()` now calls
   `hip_memcpy_kind_supported()` instead of the old two-value
   allowlist.
-- `daniel/hip-unixlib/test_memcpy_kind.c` - new unit test, plain host
+- `windows-runtime-bridge/hip-unixlib/test_memcpy_kind.c` - new unit test, plain host
   gcc, no Wine/HIP dependency: all 5 real kinds assert supported
   (with `DeviceToDevice` called out as the explicit regression case
   for this exact bug), out-of-range values assert rejected. Wired
@@ -4227,14 +4227,14 @@ The `"operation not supported"` wall is real, GPU-execution-side, and
 still open. §33's fp8-instruction-support test remains valid (rules
 out "fp8 doesn't work on this hardware at all" as an explanation) but
 does not by itself explain this specific kernel's failure. Next
-concrete step: extend `daniel/investigations/fp8_kernel_probe.c` (or a
+concrete step: extend `windows-runtime-bridge/investigations/fp8_kernel_probe.c` (or a
 new probe) with a real WMMA-based fp8 matrix kernel
 (`v_wmma_f32_16x16x16_fp8_fp8`), the direct, narrower test §33d
 proposed and this session did not yet build.
 
 ## 36. WMMA fp8 matrix instruction also ruled out - both fp8 theories now dead (2026-09-15)
 
-`daniel/investigations/wmma_fp8_probe.c` (new) tests §35c's leading
+`windows-runtime-bridge/investigations/wmma_fp8_probe.c` (new) tests §35c's leading
 candidate directly: a real WMMA (matrix-multiply-accumulate) fp8
 instruction, not just the scalar decode §33 already tested.
 
@@ -4311,7 +4311,7 @@ unrelated to fp8/WMMA entirely - most plausibly something about the
 specific launch configuration (grid/block dimensions, dynamic shared
 memory size, or a cooperative-launch/grid-sync requirement) that this
 particular kernel needs and either isn't being satisfied or isn't
-supported here. `daniel/hip-unixlib/pe_shim.c`'s `hipLaunchKernel`
+supported here. `windows-runtime-bridge/hip-unixlib/pe_shim.c`'s `hipLaunchKernel`
 currently only logs the function pointer, not its grid/block/
 shared-mem parameters - extending that logging is the direct next
 step to find out which, from a live session, rather than continuing
@@ -4571,7 +4571,7 @@ New pure module, matching this project's established
 `registry.c`/`version_query.c`/`ext_mem.c` pattern (Wine/HIP-independent,
 testable with plain host gcc):
 
-- `daniel/hip-unixlib/alloc_cap.h`/`.c` - a fixed-size (4096-entry)
+- `windows-runtime-bridge/hip-unixlib/alloc_cap.h`/`.c` - a fixed-size (4096-entry)
   pointer->size tracking table plus a running outstanding-bytes total
   (mirrors `registry.c`'s own linear-scan table design).
   `alloc_cap_would_exceed(current_total, requested_size, cap_bytes)` is
@@ -4579,7 +4579,7 @@ testable with plain host gcc):
   allows, so this is fully opt-in and changes nothing when unset).
   `alloc_cap_record`/`alloc_cap_release`/`alloc_cap_total` track real
   allocations as they happen.
-- `daniel/hip-unixlib/test_alloc_cap.c` - new unit tests: no-cap always
+- `windows-runtime-bridge/hip-unixlib/test_alloc_cap.c` - new unit tests: no-cap always
   allows, a request that would exceed the cap is rejected, one that
   fits is allowed, landing exactly on the cap is allowed (only
   strictly-over rejects), record/release correctly track the running
@@ -4821,14 +4821,14 @@ land at `0x100000000` would fault exactly the way observed, with no
 contradiction from this test's clean result. Confirming this
 specifically would need either a HIP-side equivalent of this same
 probe (a real HIP kernel doing a raw pointer write at exactly this
-address, via `daniel/investigations` - buildable, standalone, no game
+address, via `windows-runtime-bridge/investigations` - buildable, standalone, no game
 needed, the natural next test) or danielblnc's own kernel source.
 
 ## 42. Confirmed, definitively: a raw HIP pointer fault reproduces the exact real crash (2026-09-15)
 
 Direct follow-up to §41's negative result. Built
-`daniel/investigations/raw_pointer_fault_probe.c` - a standalone,
-`daniel/investigations`-style probe (comgr compile, `hipModule*` load/
+`windows-runtime-bridge/investigations/raw_pointer_fault_probe.c` - a standalone,
+`windows-runtime-bridge/investigations`-style probe (comgr compile, `hipModule*` load/
 launch, no game, no Wine/Proton) that compiles a real, original,
 clean-room kernel taking a raw pointer argument and writing through
 it with no bounds checking possible - exactly how HIP/ROCm kernels
@@ -4910,7 +4910,7 @@ outside danielblnc's source:
 3. A real package now exists to hand to danielblnc: the devcoredump
    (§38), the exact fault register value confirmed reproducible in
    isolation (§42a), and the standalone repro itself
-   (`daniel/investigations/raw_pointer_fault_probe.c` - open source, no
+   (`windows-runtime-bridge/investigations/raw_pointer_fault_probe.c` - open source, no
    proprietary code, five minutes for him to run against his own
    kernel source to find the actual bad address computation).
 
@@ -4968,7 +4968,7 @@ side-by-side under `/opt/rocm-<version>/lib`, with `/opt/rocm` kept as
 a stable, version-agnostic symlink to whichever release is "current"
 (confirmed: `/opt/rocm -> /opt/rocm-7.2.4`, with
 `libamdhip64.so.7.2.70204` and its own `libamd_comgr.so.3`/
-`libhsa-runtime64.so` living there). `daniel/hip-unixlib/native.c`'s
+`libhsa-runtime64.so` living there). `windows-runtime-bridge/hip-unixlib/native.c`'s
 `ensure_loaded()` only ever checked `/usr/lib/x86_64-linux-gnu` (and
 its `/run/host/` sandbox-mapped equivalent) - which, confirmed live,
 still held the **old 7.1.52801** build untouched after the "upgrade."
@@ -5056,7 +5056,7 @@ regardless of ROCm version, since it doesn't exist on Windows at all).
 
 ## 45. The portable Windows repro, compile-tested for real (2026-09-16)
 
-Before sending `daniel/investigations/windows-repro/raw_pointer_fault_repro.cpp`
+Before sending `windows-runtime-bridge/investigations/windows-repro/raw_pointer_fault_repro.cpp`
 to danielblnc, compile-tested it with the real `hipcc` toolchain
 (installed via the `hiplibsdk` usecase - `hipcc`, `hip-dev`,
 `rocm-hip-sdk` - needed for this compile test only, not for anything
@@ -5115,7 +5115,7 @@ suite (7 tests, including this project's own §41 addition) checks
 *mechanics* - does `CreateSharedHandle` succeed, does the handle look
 fd-shaped - not whether real data actually flows correctly across the
 shared-memory boundary. New file:
-`daniel/hip-unixlib/interop_roundtrip_test.c` - a standalone PE test
+`windows-runtime-bridge/hip-unixlib/interop_roundtrip_test.c` - a standalone PE test
 program exercising the real production path end to end: a real D3D12
 device writes a known pattern into a `D3D12_HEAP_FLAG_SHARED` buffer
 via a real GPU copy, exports it through `CreateSharedHandle`
@@ -5172,7 +5172,7 @@ actual configured game, not arbitrary executables.
 ### 46d. Also fixed: a real `.gitignore` gap
 
 While reviewing build-artifact hygiene here, found
-`daniel/hip-unixlib/test_alloc_cap` (a compiled test binary, §39) was
+`windows-runtime-bridge/hip-unixlib/test_alloc_cap` (a compiled test binary, §39) was
 never added to `.gitignore` despite every other compiled test binary
 in the same directory being listed. Fixed, and the new
 `interop_roundtrip_test.exe` added alongside it.
@@ -5181,7 +5181,7 @@ in the same directory being listed. Fixed, and the new
 
 Direct follow-through on the "test coverage/further investigation"
 analysis. New work folder for exactly this purpose:
-`daniel/vendor/releases/<version>/` (gitignored, matching this
+`windows-runtime-bridge/vendor/releases/<version>/` (gitignored, matching this
 project's existing "download read-only, never commit" convention for
 danielblnc's real binaries) - keeps every version's downloaded
 installer and extracted runtime cleanly separated, so comparisons
@@ -5245,7 +5245,7 @@ actual kernel logic.
 
 ## 48. Index-overflow characterization probe: a real result, not the one intended (2026-09-16)
 
-Built `daniel/investigations/index_overflow_probe.c` to answer a narrower
+Built `windows-runtime-bridge/investigations/index_overflow_probe.c` to answer a narrower
 question than §42 already settled: not "does a known-bad address
 fault" but "at what scale does an ordinary, original, clean-room
 flattened-tensor-index computation (`idx = ((z*H+y)*W+x)*C+c`, all
@@ -5330,7 +5330,7 @@ future occurrence faster to diagnose from the log alone.
 
 ### The gap
 
-`daniel/hip-unixlib/registry.c`'s function registry already learns
+`windows-runtime-bridge/hip-unixlib/registry.c`'s function registry already learns
 each kernel's real mangled name at registration time
 (`unix_register_function` receives it as `a->device_name`), logs it
 *once*, then discards it - only the `host_fn` pointer and the
@@ -5488,7 +5488,7 @@ the gap flagged in §50a, implemented the real fix: `__hipRegisterVar`
 now resolves the real device global via `hipModuleGetGlobal` (mirroring
 `__hipRegisterFunction`/`hipModuleGetFunction` exactly) and remembers
 `host_var -> device_ptr` in a new registry table
-(`registry_add_var`/`registry_find_var`, `daniel/hip-unixlib/registry.c`,
+(`registry_add_var`/`registry_find_var`, `windows-runtime-bridge/hip-unixlib/registry.c`,
 kept separate from the function table on purpose - no reason a
 host_var and host_fn address should ever be compared against each
 other). `hipMemcpyToSymbol` now looks up that resolution and forwards
@@ -5529,7 +5529,7 @@ submission count, it reports the capture lost.
 
 This is **not** a HIP-path issue - nothing about it touches
 `hipMemcpy`/`hipLaunchKernel`/`hipGetLastError` at all, so it's outside
-what `daniel/hip-unixlib` can fix. Most likely real cause: vkd3d-proton's
+what `windows-runtime-bridge/hip-unixlib` can fix. Most likely real cause: vkd3d-proton's
 D3D12->Vulkan translation is documented to batch/reorder
 `ExecuteCommandLists` calls differently than a native Windows D3D12
 driver in some cases; if Daniel's runtime's internal submission
@@ -5570,7 +5570,7 @@ submissions.
 Before investigating any specific solution (and before considering
 work seen in other public Linux ports of this runtime - see below),
 (b) was tested directly and in isolation:
-`daniel/investigations/readback_coherency_probe.c`, a standalone D3D12
+`windows-runtime-bridge/investigations/readback_coherency_probe.c`, a standalone D3D12
 program with no HIP/shim dependency at all. 200 iterations, each one:
 CPU writes a known marker into an UPLOAD buffer, a real GPU
 `CopyBufferRegion` copies it into a READBACK buffer, a **real blocking
@@ -5628,7 +5628,7 @@ indices (§50e) fits (c) just as naturally as (a): a consistent latency
 gap produces exactly that kind of deterministic "always short by the
 same amount" pattern.
 
-`daniel/investigations/submission_timing_probe.c` tests both directly:
+`windows-runtime-bridge/investigations/submission_timing_probe.c` tests both directly:
 8 independent command lists, each copying a distinct marker into its
 own offset of one READBACK buffer, submitted via 8 separate
 `ExecuteCommandLists` calls in a tight loop with **no wait between
@@ -5770,7 +5770,7 @@ there and simply not being used by this project's setup.
 Checked the real `dlssnr_on_amd.ini` next to the game - it only sets
 `Enabled=1`, nothing about wait method or timeouts, meaning every other
 setting is at whatever danielblnc's binary defaults to. `strings` on
-the real, already-extracted `daniel/vendor/releases/v0.3.1/version_v0.3.1.dll`
+the real, already-extracted `windows-runtime-bridge/vendor/releases/v0.3.1/version_v0.3.1.dll`
 (no execution, no disassembly - the same static, read-only technique
 §47 used) surfaced the real ini keys and, critically, danielblnc's own
 compiled log messages explaining them:
@@ -6152,10 +6152,10 @@ licensed, so - unlike the earlier `bulacha3`/un-licensed-`guentra`-repo
 situation - this project can legally adapt the actual code, not just
 the idea, with attribution (`THIRD-PARTY.md`).
 
-Built `daniel/investigations/snapshot_gate.h`/`.c` (a C port of the
+Built `windows-runtime-bridge/investigations/snapshot_gate.h`/`.c` (a C port of the
 producer-ordering check, pure/Wine-independent, 11 real unit tests in
 `test_snapshot_gate.c`, all pass) and
-`daniel/investigations/faithful_submission_probe.c` (an 8-slot ring,
+`windows-runtime-bridge/investigations/faithful_submission_probe.c` (an 8-slot ring,
 40 total submissions/5 full wraps, adapting the real deferred-
 submission fence logic).
 
@@ -6184,9 +6184,9 @@ deliberately not attempted without separate, explicit go-ahead first.
 
 ## 62. A backend-selection mechanism, prepared - real research, not yet live
 
-Prepared `daniel/backends/` so this project's tooling can cleanly
+Prepared `windows-runtime-bridge/backends/` so this project's tooling can cleanly
 switch between two mutually-exclusive injection mechanisms: this
-project's own (`version.dll` hijack + `daniel/hip-unixlib`) and
+project's own (`version.dll` hijack + `windows-runtime-bridge/hip-unixlib`) and
 `guentra/dlss5-amd-hip-linux`'s (a `d3d12.dll`-proxying ReShade add-on
 + his own modified vkd3d-proton + his own `dlss5_hip.dll`).
 
@@ -6199,7 +6199,7 @@ hijacked `version.dll` like danielblnc's. This independently confirms
 the two backends are genuinely meant to be mutually exclusive, not
 just an assumption on this project's part.
 
-**Built**: `daniel/backends/README.md` (why the two can't coexist -
+**Built**: `windows-runtime-bridge/backends/README.md` (why the two can't coexist -
 overlapping FFX/D3D12 hook surface, not a literal filename collision),
 `danielblnc/README.md` and `guentra/README.md` (exact file sets and
 launch options for each, the latter real-researched from his source),
@@ -6221,7 +6221,7 @@ confirmed against his actual build docs yet.
 
 **Status: scaffolding and documentation only.** `guentra`'s actual
 release binaries have not been fetched or deployed anywhere - not into
-this repo (same standing rule as `daniel/vendor/`), not into the real
+this repo (same standing rule as `windows-runtime-bridge/vendor/`), not into the real
 game install. That's a real next step, deliberately gated behind
 separate, explicit go-ahead, same standing caution applied to every
 other action that touches the live game install this session.

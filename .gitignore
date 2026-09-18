@@ -1,28 +1,28 @@
 # Rust build artifacts (all crates under daniel/)
 target/
 
-# C build artifacts (daniel/hip-unixlib, daniel/investigations) - all
+# C build artifacts (windows-runtime-bridge/hip-unixlib, windows-runtime-bridge/investigations) - all
 # reproducible via `make`/a plain gcc/clang invocation, never committed.
 *.o
-daniel/hip-unixlib/x86_64-unix/
-daniel/hip-unixlib/x86_64-windows/
-daniel/investigations/rocm_probe
-daniel/investigations/fp8_kernel_probe
-daniel/investigations/wmma_fp8_probe
-daniel/investigations/raw_pointer_fault_probe
-daniel/investigations/readback_coherency_probe.exe
-daniel/investigations/submission_timing_probe.exe
-daniel/investigations/faithful_submission_probe.exe
-daniel/investigations/test_snapshot_gate
-daniel/investigations/index_overflow_probe
-daniel/hip-unixlib/test_registry
-daniel/hip-unixlib/test_version_query
-daniel/hip-unixlib/test_ext_mem
-daniel/hip-unixlib/test_hip_forward
-daniel/hip-unixlib/test_memcpy_kind
-daniel/hip-unixlib/test_alloc_cap
-daniel/hip-unixlib/test_last_error
-daniel/hip-unixlib/interop_roundtrip_test.exe
+windows-runtime-bridge/hip-unixlib/x86_64-unix/
+windows-runtime-bridge/hip-unixlib/x86_64-windows/
+windows-runtime-bridge/investigations/rocm_probe
+windows-runtime-bridge/investigations/fp8_kernel_probe
+windows-runtime-bridge/investigations/wmma_fp8_probe
+windows-runtime-bridge/investigations/raw_pointer_fault_probe
+windows-runtime-bridge/investigations/readback_coherency_probe.exe
+windows-runtime-bridge/investigations/submission_timing_probe.exe
+windows-runtime-bridge/investigations/faithful_submission_probe.exe
+windows-runtime-bridge/investigations/test_snapshot_gate
+windows-runtime-bridge/investigations/index_overflow_probe
+windows-runtime-bridge/hip-unixlib/test_registry
+windows-runtime-bridge/hip-unixlib/test_version_query
+windows-runtime-bridge/hip-unixlib/test_ext_mem
+windows-runtime-bridge/hip-unixlib/test_hip_forward
+windows-runtime-bridge/hip-unixlib/test_memcpy_kind
+windows-runtime-bridge/hip-unixlib/test_alloc_cap
+windows-runtime-bridge/hip-unixlib/test_last_error
+windows-runtime-bridge/hip-unixlib/interop_roundtrip_test.exe
 
 # GPU/process core dumps - can contain raw GPU VRAM contents from
 # whatever was loaded at crash time (potentially proprietary weight/
@@ -39,7 +39,7 @@ core.*
 # danielblnc's own runtime builds, NVIDIA-derived weights, any extracted
 # or patched build of either. See docs/linux-support-spec.md's
 # "Scope of intent" section for the hard rule behind this.
-daniel/vendor/
+windows-runtime-bridge/vendor/
 
 # guentra/dlss5-amd-hip-linux's own real release binaries (MIT licensed,
 # but still a separate, independently-versioned third-party project's
@@ -47,7 +47,7 @@ daniel/vendor/
 # verification experiment, docs/linux-support-spec.md §63, never
 # committed here). ReShade's own real binary (reshade.me) is not MIT
 # and definitely never belongs in this repo either.
-daniel/backends/guentra/vendor/
+windows-runtime-bridge/backends/guentra/vendor/
 
 # The legacy OptiScaler-approach exploration and everything under it -
 # real proprietary DLLs (danielblnc's own dlssnr_amd_pass*.dll) and a
@@ -60,4 +60,4 @@ windows/
 
 # Runtime logs produced by the stub / danielblnc's runtime / Proton
 *.log
-daniel/investigations/windows-repro/raw_pointer_fault_repro
+windows-runtime-bridge/investigations/windows-repro/raw_pointer_fault_repro

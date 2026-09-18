@@ -5,13 +5,13 @@ diagnostic tools that each answer a specific question during the root-
 cause chase, run by hand as needed. Not meant to run regularly and not
 part of `make test`. For the project's other category - ongoing
 regression/correctness tests for the shim's own production code, run
-via `make test` on every change - see `daniel/hip-unixlib/`'s
+via `make test` on every change - see `windows-runtime-bridge/hip-unixlib/`'s
 `test_*.c` files (and, once runtime-verified,
 `interop_roundtrip_test.c`) instead.
 
 A standalone ROCm runtime capability probe. Not part of the Wine/Proton
 shim - a plain Linux diagnostic tool that `dlopen`s the real
-`libamdhip64.so` directly (same technique as `daniel/hip-unixlib`) and
+`libamdhip64.so` directly (same technique as `windows-runtime-bridge/hip-unixlib`) and
 exercises real device/memory/stream/event calls, independent of Wine,
 Proton, and danielblnc's proprietary runtime entirely.
 
@@ -56,7 +56,7 @@ machinery HIP's `hiprtc` convenience API sits on top of - `hiprtc`
 itself isn't packaged on this system, but `libamd-comgr3` is), then
 loads and launches the real compiled result via the exact same
 `hipModuleLoadData`/`hipModuleGetFunction`/`hipModuleLaunchKernel`
-calls `daniel/hip-unixlib/native.c` already uses for danielblnc's own
+calls `windows-runtime-bridge/hip-unixlib/native.c` already uses for danielblnc's own
 kernels.
 
 **Result: fp8 genuinely works correctly on this GPU/ROCm/OS

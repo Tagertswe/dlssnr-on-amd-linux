@@ -31,7 +31,7 @@
  *      not a scheduling/reordering one.
  *
  * No proprietary code: real, public D3D12 APIs only, structured after
- * daniel/hip-unixlib/interop_roundtrip_test.c's own device/queue/fence
+ * windows-runtime-bridge/hip-unixlib/interop_roundtrip_test.c's own device/queue/fence
  * setup. Nothing to do with danielblnc's actual kernels or runtime.
  *
  * Build (needs this project's patched d3d12.dll/d3d12core.dll on the

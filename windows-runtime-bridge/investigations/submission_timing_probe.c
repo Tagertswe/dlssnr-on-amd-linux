@@ -36,7 +36,7 @@
  * out; slots resolving out of submission order are flagged explicitly.
  *
  * No proprietary code: real, public D3D12 APIs only, same device/queue/
- * fence setup as daniel/hip-unixlib/interop_roundtrip_test.c and this
+ * fence setup as windows-runtime-bridge/hip-unixlib/interop_roundtrip_test.c and this
  * project's own readback_coherency_probe.c. Nothing to do with
  * danielblnc's actual kernels, shaders or runtime - this tests
  * vkd3d-proton's own submission/completion behavior in isolation.

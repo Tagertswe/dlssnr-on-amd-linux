@@ -62,7 +62,7 @@ further on the actual neural-network side than I have.
   "danielblnc's shader" specifically) so it reads as a genuine,
   transferable finding rather than a claim about his code.
 - The "I read your code and adapted part of it" paragraph is genuine -
-  this actually happened (`daniel/investigations/snapshot_gate.*`,
+  this actually happened (`windows-runtime-bridge/investigations/snapshot_gate.*`,
   `faithful_submission_probe.c`, properly MIT-attributed in
   `THIRD-PARTY.md`), not flattery. Only mentions the clean synthetic
   probe result (real and true) - deliberately does **not** mention the

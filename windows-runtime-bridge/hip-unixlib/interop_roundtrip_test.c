@@ -80,7 +80,7 @@
 #include <stdio.h>
 #include <stdint.h>
 
-/* Mirrors daniel/hip-unixlib/ext_mem.h exactly - not re-included
+/* Mirrors windows-runtime-bridge/hip-unixlib/ext_mem.h exactly - not re-included
  * directly since that header is written to be Wine/HIP-independent
  * (buildable with a plain host compiler for its own unit tests) and
  * this file needs the real Windows PE build instead. Byte-for-byte

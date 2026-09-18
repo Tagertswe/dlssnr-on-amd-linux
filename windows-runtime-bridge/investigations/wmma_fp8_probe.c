@@ -12,7 +12,7 @@
  * tests that specific, narrower instruction family directly, exactly
  * the way fp8_kernel_probe.c tested the scalar one: compile a real,
  * original, clean-room kernel from source via libamd_comgr, load and
- * launch it via the same hipModule* API daniel/hip-unixlib/native.c
+ * launch it via the same hipModule* API windows-runtime-bridge/hip-unixlib/native.c
  * uses, and see whether hipDeviceSynchronize/hipGetLastError reports
  * a real error - the same "operation not supported" signature seen
  * live in the game's crash log.
@@ -28,7 +28,7 @@
  * \xc2\xa730c).
  *
  * REQUIRES `libamd-comgr-dev` (headers only, matches the installed
- * `libamd-comgr3` runtime exactly - see daniel/investigations/README.md,
+ * `libamd-comgr3` runtime exactly - see windows-runtime-bridge/investigations/README.md,
  * including the no-root `apt-get download`/`dpkg-deb -x` alternative):
  *
  *   sudo apt install libamd-comgr-dev

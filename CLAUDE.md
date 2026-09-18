@@ -37,7 +37,7 @@ sections first when picking this project back up.
 
 ## Repo layout
 
-- **`daniel/hip-unixlib/`** - the active, current implementation. A
+- **`windows-runtime-bridge/hip-unixlib/`** - the active, current implementation. A
   Wine [unixlib](https://gitlab.winehq.org/wine/wine/-/wikis/Unix-Library-Guide)
   module: a PE-side shim (`pe_shim.c`, cross-compiled to
   `amdhip64_7.dll`) paired with native Linux code (`native.c`, compiled
@@ -46,20 +46,20 @@ sections first when picking this project back up.
   directly. `native.c` `dlopen`s the host's real ROCm/HIP runtime and
   forwards real calls through it. See "Current status" below for what's
   real vs. still stubbed.
-- **`daniel/hip-bridge/`** and **`daniel/hip-stub/`** - superseded
+- **`windows-runtime-bridge/hip-bridge/`** and **`windows-runtime-bridge/hip-stub/`** - superseded
   earlier designs (a socket-IPC daemon, and a Rust port), kept for
   reference. Not where new work happens.
 - **`windows/`** - legacy OptiScaler-based Windows approach, explored
   and set aside (a real conflict risk when combined with danielblnc's
   runtime - both hook the same D3D12 surface). Not where new work
   happens.
-- **`daniel/investigations/`** - standalone Linux diagnostics that talk to
+- **`windows-runtime-bridge/investigations/`** - standalone Linux diagnostics that talk to
   the real ROCm runtime directly (`dlopen`, no Wine/Proton/game
   involved) - `rocm_probe.c` (no compiler needed, run any time) and
   `fp8_kernel_probe.c` (needs `libamd-comgr-dev` installed once, then
   compiles and runs a real fp8 test kernel at runtime). See its own
   README for exact commands.
-- **`daniel/backends/`** - scaffolding (docs + `switch_backend.sh`) for
+- **`windows-runtime-bridge/backends/`** - scaffolding (docs + `switch_backend.sh`) for
   switching between this project's own injection mechanism and
   `guentra/dlss5-amd-hip-linux`'s (a materially different, MIT-licensed,
   self-contained alternative - see `docs/linux-support-spec.md` §61-§62).
@@ -111,7 +111,7 @@ candidates and next steps in §52/§56.
   patches" below): a `vkd3d-proton` patch (opt-in
   `VKD3D_CONFIG=external_memory_fd`) and a one-line Wine `winevulkan`
   patch. Both are necessary together.
-- `daniel/hip-unixlib`'s own bridge for consuming that fd was
+- `windows-runtime-bridge/hip-unixlib`'s own bridge for consuming that fd was
   completed and confirmed live this session: `hipImportExternalMemory`,
   `hipExternalMemoryGetMappedBuffer`, `hipDestroyExternalMemory`, and
   the HIP event/stream functions (`hipEventCreate(WithFlags)`,
@@ -135,7 +135,7 @@ the cause of the crash - corrected after re-testing live.**
 `HIP_MEMCPY_HOST_TO_DEVICE`/`HIP_MEMCPY_DEVICE_TO_HOST` through - a
 real `hipMemcpyDeviceToDevice` call (kind `3`) was rejected locally
 before ever reaching `native.c`/real HIP. This is a genuine bug and
-stays fixed (`daniel/hip-unixlib/memcpy_kind.h`/`.c`,
+stays fixed (`windows-runtime-bridge/hip-unixlib/memcpy_kind.h`/`.c`,
 `hip_memcpy_kind_supported()`, covered by `test_memcpy_kind.c`;
 `pe_shim.c`'s gate now accepts the full real 0-4 `hipMemcpyKind`
 range). But two live re-tests after deploying it - the second with
@@ -162,7 +162,7 @@ rejecting something before it reaches real HIP.
 
 **The earlier leading theory (basic fp8 support) was ruled out first,
 by direct test, not inference**, before any of the above.
-`daniel/investigations/fp8_kernel_probe.c` compiles a real fp8 kernel
+`windows-runtime-bridge/investigations/fp8_kernel_probe.c` compiles a real fp8 kernel
 from source at runtime (via `libamd_comgr`) and runs it through the
 exact same `hipModule*` calls this shim uses - it executed correctly,
 producing a byte-exact correct result from a real
@@ -172,7 +172,7 @@ rules out "fp8 doesn't work on this hardware at all," but not a more
 complex fp8 *matrix* (WMMA) usage specifically - see below.
 
 **The WMMA fp8 matrix theory is now also ruled out.**
-`daniel/investigations/wmma_fp8_probe.c` (new) compiles and runs a real
+`windows-runtime-bridge/investigations/wmma_fp8_probe.c` (new) compiles and runs a real
 `__builtin_amdgcn_wmma_f32_16x16x16_fp8_fp8_w32_gfx12` matrix-
 multiply-accumulate instruction (the real Clang builtin name, found
 by grepping strings out of the installed `libamd_comgr.so` itself -
@@ -264,7 +264,7 @@ native Windows HIP stack.
 out (§40).** Built and live-tested `DLSSNR_VRAM_CAP_BYTES` (an opt-in
 cap on this pipeline's total outstanding real GPU allocation, rejecting
 over-cap `hipMalloc` calls with a real `hipErrorOutOfMemory` -
-`daniel/hip-unixlib/alloc_cap.h`/`.c`, unit tested). Live-tested at a
+`windows-runtime-bridge/hip-unixlib/alloc_cap.h`/`.c`, unit tested). Live-tested at a
 3GiB cap: **the ring hang happened again anyway**, with real
 outstanding allocation at fault time only ~720MB - nowhere near the
 cap or the 4GB boundary. This rules out "total live GPU memory
@@ -285,7 +285,7 @@ Two real, buildable, no-game-needed tests settle this:
   -> S_OK`) - ruling out "any access at this address" as sufficient on
   its own, and ruling out this project's own vkd3d-proton patch as the
   cause (its diff has zero address/offset arithmetic at all).
-- §42: `daniel/investigations/raw_pointer_fault_probe.c` - a standalone
+- §42: `windows-runtime-bridge/investigations/raw_pointer_fault_probe.c` - a standalone
   HIP probe compiling a real kernel that writes through a *raw
   pointer* (no descriptor bounds-checking at all, exactly how HIP
   kernels normally address memory) set to the literal address
@@ -344,7 +344,7 @@ at all).
 **Way forward:** hand danielblnc the complete package - the
 devcoredump (§38), the exact fault register value confirmed
 reproducible in isolation (§42a), the standalone repro itself
-(`daniel/investigations/raw_pointer_fault_probe.c`, open source, no
+(`windows-runtime-bridge/investigations/raw_pointer_fault_probe.c`, open source, no
 proprietary code, a five-minute run against his own source to find the
 actual bad address computation), and confirmation that his own
 documented ROCm version requirement doesn't change the outcome (§44).
@@ -394,7 +394,7 @@ patch other open-source projects, not this one):
 
 ## How this has been tested
 
-**Unit tests (`daniel/hip-unixlib`, run via `make test`):** pure,
+**Unit tests (`windows-runtime-bridge/hip-unixlib`, run via `make test`):** pure,
 Wine/HIP-independent logic is factored out of `native.c`/`pe_shim.c`
 into small standalone modules specifically so it's testable with a
 plain host compiler - no Wine, no ROCm, no cross-compilation:
@@ -414,7 +414,7 @@ without real hardware and a real Wine environment - and is instead
 validated live, the way below.
 
 **Live validation, in increasing order of realism:**
-1. `daniel/hip-unixlib`'s own test target (`make test`) - fast, no
+1. `windows-runtime-bridge/hip-unixlib`'s own test target (`make test`) - fast, no
    Wine/game needed, catches regressions in the pure logic.
 2. The vkd3d-proton test suite (`tests/d3d12_external_memory_fd.c`)
    run standalone against a built `d3d12.dll`/`d3d12core.dll`, via

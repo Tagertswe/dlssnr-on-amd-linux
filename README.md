@@ -20,7 +20,7 @@ flowchart TB
     subgraph game["Game process (Cyberpunk 2077), under Proton"]
         G["Game's real D3D12 renderer"]
         V["version.dll — danielblnc's real DLSS-NR runtime<br/>(DLL-hijacked, proprietary, not in this repo)"]
-        PE["amdhip64_7.dll — this repo's PE-side shim<br/>(daniel/hip-unixlib/pe_shim.c)"]
+        PE["amdhip64_7.dll — this repo's PE-side shim<br/>(windows-runtime-bridge/hip-unixlib/pe_shim.c)"]
         G -- "D3D12 shared handle (UAV)" --> V
         V -- "real HIP calls\n(hipImportExternalMemory, hipMemcpy, hipLaunchKernel, ...)" --> PE
     end
@@ -33,7 +33,7 @@ flowchart TB
     end
 
     subgraph linux["Host Linux, same process (Wine unixlib)"]
-        NAT["amdhip64_7.so — this repo's native-side shim<br/>(daniel/hip-unixlib/native.c)"]
+        NAT["amdhip64_7.so — this repo's native-side shim<br/>(windows-runtime-bridge/hip-unixlib/native.c)"]
         ROCM["Real ROCm / libamdhip64.so<br/>(host install, not in this repo)"]
         PE -- "unixlib call, real pointers,\nsame process, no IPC" --> NAT
         WVK -- "real fd" --> NAT
@@ -56,7 +56,7 @@ This repo is Linux-glue code for someone else's runtime, not a community hub. Fo
 ## Credits / prior art
 
 - [zmodelerlover/dlss5-neural-amd](https://github.com/zmodelerlover/dlss5-neural-amd) (MIT) — a sibling Windows/ReShade project driving the same danielblnc runtime. Its `tools/extract_runtime.py` (a read-only PE-parsing script that carves the runtime payload out of danielblnc's own official installer, without executing it) and `src/vkbridge/vkbridge.cpp` (its Vulkan resource-interop bridge for the same runtime) were read as engineering reference for this project's own D3D12↔HIP interop and runtime-extraction work — nothing from it is vendored or copied into this repo, only consulted for pattern/approach. Not affiliated with this project or with danielblnc.
-- [guentra/dlss5-amd-hip-linux](https://github.com/guentra/dlss5-amd-hip-linux) (MIT) — an independent, from-scratch HIP/rocWMMA reimplementation of the DLSS-NR network itself (no dependency on danielblnc's runtime at all). Two small files under `daniel/investigations/` (`snapshot_gate.h`/`.c`, and the ring-buffer submission logic in `faithful_submission_probe.c`) are adapted from its `native_snapshot_gate.h`/`native_game_submission.h` — see `THIRD-PARTY.md` for the full license notice. Not affiliated with this project.
+- [guentra/dlss5-amd-hip-linux](https://github.com/guentra/dlss5-amd-hip-linux) (MIT) — an independent, from-scratch HIP/rocWMMA reimplementation of the DLSS-NR network itself (no dependency on danielblnc's runtime at all). Two small files under `windows-runtime-bridge/investigations/` (`snapshot_gate.h`/`.c`, and the ring-buffer submission logic in `faithful_submission_probe.c`) are adapted from its `native_snapshot_gate.h`/`native_game_submission.h` — see `THIRD-PARTY.md` for the full license notice. Not affiliated with this project.
 
 ## What you need separately
 
@@ -64,13 +64,15 @@ This repo is glue code and patches only. To actually use any of this, you need:
 
 - [danielblnc/DLSS-NR-on-AMD](https://github.com/danielblnc/DLSS-NR-on-AMD)'s real runtime (not included here — closed-source, get it from Daniel's own repo/releases).
 - A real AMD GPU with ROCm installed on the host (see `docs/linux-support-spec.md` for the exact versions this has been validated against).
-- A Proton build with the two patches above applied (see `daniel/` for what's needed, and `docs/linux-support-spec.md` for the exact build process used).
+- A Proton build with the two patches above applied — see `windows-runtime-bridge/proton-patches/` for the raw patch files and full build/test instructions (no upstream PRs are open yet, so this is the only way to get them right now), and `docs/linux-support-spec.md` for the full narrative.
 
 ## Repo layout
 
-- **`daniel/hip-unixlib/`** — the active HIP compute shim: a PE-side stub (`pe_shim.c`, built as `amdhip64_7.dll`) paired with native Linux code (`native.c`, built as `amdhip64_7.so`) that runs in the same process under Wine and forwards real calls into the host's real ROCm/HIP runtime.
-- **`daniel/investigations/`** — standalone Linux diagnostics that talk to the real ROCm runtime directly, independent of Wine/Proton/the game, used to isolate and confirm real hardware/driver behavior during this investigation.
-- **`daniel/hip-bridge/`** and **`daniel/hip-stub/`** — earlier, superseded designs (a socket-IPC daemon, and a Rust port), kept for reference.
+- **`windows-runtime-bridge/hip-unixlib/`** — the active HIP compute shim: a PE-side stub (`pe_shim.c`, built as `amdhip64_7.dll`) paired with native Linux code (`native.c`, built as `amdhip64_7.so`) that runs in the same process under Wine and forwards real calls into the host's real ROCm/HIP runtime.
+- **`windows-runtime-bridge/investigations/`** — standalone Linux diagnostics that talk to the real ROCm runtime directly, independent of Wine/Proton/the game, used to isolate and confirm real hardware/driver behavior during this investigation.
+- **`windows-runtime-bridge/hip-bridge/`** and **`windows-runtime-bridge/hip-stub/`** — earlier, superseded designs (a socket-IPC daemon, and a Rust port), kept for reference.
+- **`windows-runtime-bridge/proton-patches/`** — the raw patch files against Wine/vkd3d-proton needed for D3D12↔HIP memory interop, plus instructions to build a patched Proton yourself via Valve's own official build pipeline. No upstream PRs are open yet, so this is currently the only way to get them.
+- **`windows-runtime-bridge/backends/`** — docs and a switch script for choosing between this project's own (`danielblnc`) backend and guentra's independent reimplementation (`guentra`) — the two can't coexist in the same game install at once.
 - **`docs/linux-support-spec.md`** — the full investigation log: every finding, every patch, every dead end, every live test result, in chronological order. This is the real source of truth for "why" and "exactly what happened" behind every decision in this repo.
 - **`CLAUDE.md`** — a working summary for picking this project back up, including current status and how everything here has actually been tested.
 
@@ -103,7 +105,7 @@ No proprietary code, weights, or binaries from NVIDIA or danielblnc are included
 
 ## License
 
-This repo's own original code (the HIP shim in `daniel/hip-unixlib/`, the diagnostics in `daniel/investigations/`, docs, and everything else authored here) is licensed under the [MIT License](LICENSE). See [THIRD-PARTY.md](THIRD-PARTY.md) for the notice covering the small amount of code adapted from another MIT-licensed project.
+This repo's own original code (the HIP shim in `windows-runtime-bridge/hip-unixlib/`, the diagnostics in `windows-runtime-bridge/investigations/`, docs, and everything else authored here) is licensed under the [MIT License](LICENSE). See [THIRD-PARTY.md](THIRD-PARTY.md) for the notice covering the small amount of code adapted from another MIT-licensed project.
 
 The two upstream projects this work patches are **not** MIT:
 

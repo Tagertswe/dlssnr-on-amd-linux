@@ -36,7 +36,7 @@
  * and 2^32 boundaries and record exactly where hipDeviceSynchronize
  * stops reporting clean success.
  *
- * REQUIRES `libamd-comgr-dev` - see daniel/investigations/README.md.
+ * REQUIRES `libamd-comgr-dev` - see windows-runtime-bridge/investigations/README.md.
  *
  *   gcc -Wall -o index_overflow_probe index_overflow_probe.c -ldl -lamd_comgr
  *   timeout --kill-after=10s 60s env LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu ./index_overflow_probe

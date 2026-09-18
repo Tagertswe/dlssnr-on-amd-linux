@@ -4,7 +4,9 @@ Get danielblnc/DLSS-NR-on-AMD's standalone runtime loading and hooking
 correctly under Linux/Proton, on AMD GPUs, via a real HIP backend.
 
 **Status: transport layer complete and verified against real hardware.
-Real neural-network inference is not yet available** - see Status below.
+Real neural-network inference does run through this path, but is not
+yet usable for normal play** - see Status below and the root
+`README.md`'s Status section for the current, honest picture.
 
 ## What this is
 

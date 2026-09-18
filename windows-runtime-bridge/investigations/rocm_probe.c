@@ -1,7 +1,7 @@
 /* Standalone ROCm runtime capability probe.
  *
  * Does NOT need hipcc, HIP headers, or a device compiler - none are
- * installed on this system (matching daniel/hip-unixlib/native.c's own
+ * installed on this system (matching windows-runtime-bridge/hip-unixlib/native.c's own
  * "no ROCm dev package" constraint). dlopen's the real
  * libamdhip64.so.7 directly, the same way native.c does, and calls the
  * real runtime API with hand-declared prototypes matching HIP's public,
@@ -50,7 +50,7 @@ typedef hipError_t (*hipRuntimeGetVersion_t)(int *);
 #define HIP_MEMCPY_DEVICE_TO_HOST 2
 
 /* Exact byte size of the "R0600" hipDeviceProp_t ABI, matching
- * daniel/hip-unixlib/native.c's own confirmed value (see
+ * windows-runtime-bridge/hip-unixlib/native.c's own confirmed value (see
  * docs/linux-support-spec.md \xc2\xa78 item 8 / \xc2\xa712) - this test reuses that
  * already-validated size rather than re-deriving it. */
 #define HIP_DEVICE_PROP_R0600_SIZE 1472
@@ -168,7 +168,7 @@ int main(void)
     if (p_hipGetDevicePropertiesR0600)
     {
         printf("\n--- device properties ABI sanity (validates native.c's 1472-byte assumption) ---\n");
-        /* Exactly the size daniel/hip-unixlib/native.c already assumes - if
+        /* Exactly the size windows-runtime-bridge/hip-unixlib/native.c already assumes - if
          * the real library actually writes more than this into the buffer,
          * that's a real heap overflow this test would be the first to
          * surface, rather than finding out via a crash under Wine. */

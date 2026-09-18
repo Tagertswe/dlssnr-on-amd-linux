@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   hip-unixlib-unit-tests:
-    name: daniel/hip-unixlib make test
+    name: windows-runtime-bridge/hip-unixlib make test
     runs-on: ubuntu-latest
     steps:
       # Pinned to a commit SHA (actions/checkout v4.2.2), not a mutable
@@ -26,12 +26,12 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      # Only daniel/hip-unixlib's pure-module tests run in CI - they're
+      # Only windows-runtime-bridge/hip-unixlib's pure-module tests run in CI - they're
       # plain host gcc, no Wine/ROCm/GPU dependency. Everything else in
       # this repo needs real Wine + a real ROCm install + a real AMD GPU
       # and is validated locally by hand (see docs/linux-support-spec.md);
       # a green run here does not by itself clear a PR that touches
       # native.c/pe_shim.c for merge.
       - name: make test
-        working-directory: daniel/hip-unixlib
+        working-directory: windows-runtime-bridge/hip-unixlib
         run: make test
