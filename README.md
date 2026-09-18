@@ -78,14 +78,16 @@ This repo is glue code and patches only. To actually use any of this, you need:
 
 **This does not currently work well enough for normal play. Read this before trying it.**
 
-The shim itself does its job: it forwards real HIP calls from Daniel's runtime through to the host's real ROCm driver, and the D3D12↔HIP memory interop patches do make shared-handle resources actually work under Proton. DLSS-NR does initialize and does run real neural-network jobs on the GPU through this path — that part is verified, not aspirational.
+The shim itself does its job: it forwards real HIP calls from Daniel's runtime through to the host's real ROCm driver, and the D3D12↔HIP memory interop patches do make shared-handle resources actually work under Proton. DLSS-NR does initialize and does run real neural-network jobs on the GPU through this path — that part is verified via logs and driver-level evidence, not aspirational.
+
+**What's not yet verified: whether the DLSS-NR output is visibly correct on screen.** Everything confirmed so far is at the compute/dispatch level (jobs launch, run, and return a result) — nobody has yet visually confirmed in-game that the rendered picture reflects a correct DLSS-NR pass (proper denoising/upscaling quality, no visible artifacts). Given the severity of the timeout issue below, sessions so far haven't been stable enough to do that comparison properly. Treat DLSS-NR's actual visual output quality under this setup as unverified until someone reports back on it.
 
 But a real interactive play session (not a synthetic benchmark) shows two separate unresolved problems:
 
 - **Severe performance**: Daniel's own capture-check times out on the large majority of jobs before eventually succeeding via retry/fallback. Each timeout costs real wall-clock time — the actual neural-network compute is fast (~20ms), but the game ends up waiting roughly 150ms per frame for it. In practice this is the difference between playable and single-digit FPS. Root cause not identified yet — several plausible levers (stream ordering, wait-mode settings, submission queue mode) have been tested and ruled out; see `docs/linux-support-spec.md` for the full trail.
 - **Occasional GPU ring hangs**: a GPU-side spin-wait pattern in the default configuration can trigger a real, kernel-level AMDGPU ring timeout and reset, invisible to the game/Vulkan (no crash, no error — the picture just freezes or stalls). Setting `CpuWait=1` in Daniel's own `dlssnr_on_amd.ini` avoids this reliably in testing, but is a workaround, not a fix, and hasn't been stress-tested for hours-long sessions.
 
-So: expect DLSS-NR to turn on, run, and produce output — but expect it to be rough, slow, and not something to rely on for actual gameplay yet. See `CLAUDE.md` for the current working summary and `docs/linux-support-spec.md` for the full, detailed history of every finding, patch, and dead end.
+So: expect DLSS-NR to turn on and run compute jobs on the GPU — but expect it to be rough, slow, not something to rely on for actual gameplay yet, and not yet confirmed to look visibly correct on screen. See `CLAUDE.md` for the current working summary and `docs/linux-support-spec.md` for the full, detailed history of every finding, patch, and dead end.
 
 The goal has always been bringing DLSS-NR to Linux gamers — the shim design in this repo is not presented as the final or only way to get there, just the approach that's been worked through and validated so far. If a cleaner or more robust path emerges (here or elsewhere), that's a win, not a competing claim.
 
