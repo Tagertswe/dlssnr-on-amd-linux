@@ -112,7 +112,7 @@ fn call_bridge(req: Request) -> Result<Vec<u8>, String> {
 //
 // Verified 2026-09-13: HIP_SUCCESS/HIP_MEMCPY_HOST_TO_DEVICE/
 // HIP_MEMCPY_DEVICE_TO_HOST below were exercised for real against the
-// installed ROCm 7.1 runtime (see daniel/hip-bridge's native-daemon and
+// installed ROCm 7.1 runtime (see windows-runtime-bridge/hip-bridge's native-daemon and
 // docs/linux-support-spec.md §8 item 6) and are confirmed correct.
 // HIP_ERROR_NO_DEVICE/HIP_ERROR_NOT_SUPPORTED remain best-effort
 // recollections used only for our own stub-side error reporting, not
@@ -963,7 +963,7 @@ pub extern "C" fn hipEventElapsedTime(
 
 // ---------------------------------------------------------------------
 // D3D12 external-memory interop (still stubbed - the transport spike in
-// daniel/hip-bridge/pe-client proves this path works via a *separate*
+// windows-runtime-bridge/hip-bridge/pe-client proves this path works via a *separate*
 // Vulkan-side import, not through these HIP-side entry points; wiring
 // that into the real shim is a later stage)
 // ---------------------------------------------------------------------

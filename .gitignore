@@ -1,4 +1,4 @@
-# Rust build artifacts (all crates under daniel/)
+# Rust build artifacts (all crates under windows-runtime-bridge/)
 target/
 
 # C build artifacts (windows-runtime-bridge/hip-unixlib, windows-runtime-bridge/investigations) - all

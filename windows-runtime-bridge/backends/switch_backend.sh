@@ -11,8 +11,8 @@
 #
 # Usage: switch_backend.sh <daniel|guentra> <path to game's bin/x64 dir>
 #
-# File sets - see daniel/backends/danielblnc/README.md and
-# daniel/backends/guentra/README.md for the real, researched source of
+# File sets - see windows-runtime-bridge/backends/danielblnc/README.md and
+# windows-runtime-bridge/backends/guentra/README.md for the real, researched source of
 # each list.
 set -euo pipefail
 
@@ -80,7 +80,7 @@ fi
 echo
 if [ "$MISSING" -ne 0 ]; then
     echo "WARNING: some files for the '$TARGET' backend were never present to restore."
-    echo "See daniel/backends/$TARGET/README.md for the real, complete file list and where each comes from."
+    echo "See windows-runtime-bridge/backends/$TARGET/README.md for the real, complete file list and where each comes from."
     echo
 fi
 
@@ -95,7 +95,7 @@ else
     cat <<'EOF'
 WINEDLLOVERRIDES="version=b;dlss5_hip=n;d3d12=n,b;d3d12core=n,b" %command%
 
-Compatibility tool: NOT YET CONFIRMED - see daniel/backends/guentra/README.md's
+Compatibility tool: NOT YET CONFIRMED - see windows-runtime-bridge/backends/guentra/README.md's
 open question about whether this backend needs a stock Proton build instead of
 this project's patched one. Do not assume fdtest-11.0-2c is correct here without
 checking guentra's own build docs first.
