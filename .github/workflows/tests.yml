@@ -35,3 +35,21 @@ jobs:
       - name: make test
         working-directory: windows-runtime-bridge/hip-unixlib
         run: make test
+
+  snapshot-gate-unit-tests:
+    name: windows-runtime-bridge/investigations snapshot_gate unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      # snapshot_gate.c/.h and its test are also plain, portable C (only
+      # stddef.h/stdint.h/assert.h/stdio.h) - no Wine/ROCm/GPU dependency,
+      # same criteria as the job above. Every other file under
+      # investigations/ needs libamd_comgr, a real D3D12 device via
+      # Wine/vkd3d-proton, or real hardware, and stays local-only.
+      - name: build and run test_snapshot_gate
+        working-directory: windows-runtime-bridge/investigations
+        run: |
+          gcc -Wall -Werror -o test_snapshot_gate snapshot_gate.c test_snapshot_gate.c
+          ./test_snapshot_gate
