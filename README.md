@@ -11,7 +11,7 @@ This repo gets that runtime working under Wine/Proton on Linux. It does **not** 
 - [HansKristian-Work/vkd3d-proton](https://github.com/HansKristian-Work/vkd3d-proton) — an opt-in `VKD3D_CONFIG=external_memory_fd` patch exposing real Linux file descriptors for D3D12 shared handles. (No dedicated Discord published on the repo; general discussion happens on its GitHub issues.)
 - [ValveSoftware/wine](https://github.com/ValveSoftware/wine) (the Proton fork) — a one-line `winevulkan` fix exposing `VK_KHR_external_memory_fd` through Wine's Vulkan thunks (present but deliberately hidden in Wine's own generator). (No dedicated Discord published on the repo.)
 
-Tested against Cyberpunk 2077 on an AMD Radeon RX 9070 XT (RDNA4, gfx1201).
+**Target scope: Cyberpunk 2077, AMD Radeon RX 9070 XT (RDNA4, gfx1201).** That's the only game/GPU combination this has actually been built and tested against so far — not a claim of broader compatibility. Other RDNA GPUs or games may or may not work; nobody's verified either way yet.
 
 ## How it fits together
 
@@ -102,6 +102,8 @@ The goal has always been bringing DLSS-NR to Linux gamers — the shim design in
 This repo is explicitly designed to be forked and reused however you find useful — for a different game, a different GPU family, a different shim approach entirely. Fork it, rip pieces out, go a different direction. No permission needed, MIT covers it.
 
 Pull requests are welcome too. Given how much of this project's actual debugging time has gone into chasing regressions that a test would have caught immediately (see `docs/linux-support-spec.md` for several real examples), I'll likely ask for real test coverage on non-trivial changes before merging, and reserve the right to decline a PR that doesn't have it — not a rejection of the idea, just a bar for what goes into the tree here.
+
+**A note on maintenance bandwidth**: this is a side project maintained by one person with limited time. If it gets a lot of attention and a large volume of issues/PRs comes in, response times may be slow, and some things may go unanswered for a while — not a reflection of priority, just a capacity limit. If that becomes a real bottleneck, forking (see above) is genuinely encouraged rather than waiting on this repo.
 
 ## Scope / what's deliberately excluded
 
