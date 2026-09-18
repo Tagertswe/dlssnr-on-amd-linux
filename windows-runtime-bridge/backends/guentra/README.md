@@ -1,9 +1,12 @@
 # `guentra` backend (alternate, open-source reimplementation)
 
-Real-researched from `guentra/dlss5-amd-hip-linux`'s actual source
-(`linux/dlssnr/deploy.py`), not guessed. Not yet live-tested against
-the real game - see this directory's parent `README.md`'s Status
-section.
+Real-researched from [`guentra/dlss5-amd-hip-linux`](https://github.com/guentra/dlss5-amd-hip-linux)'s
+actual source (`linux/dlssnr/deploy.py`), not guessed. The ReShade/
+vkd3d-proton proxy chain has been verified to engage correctly
+end-to-end in isolation (`docs/linux-support-spec.md` §69) - not yet
+tested against the real game, or past device/command-queue creation
+(no actual neural-network dispatch or frame-present loop exercised
+yet). See this directory's parent `README.md`'s Status section.
 
 **Confirms the mutual-exclusivity design decision directly**: in HIP
 mode, his own launcher wrapper explicitly sets `version=b`

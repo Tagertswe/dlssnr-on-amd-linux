@@ -6483,7 +6483,8 @@ not another synthetic probe.
 
 ## 69. guentra's backend hookup, re-tested properly - the ReShade/vkd3d-proton proxy chain does engage correctly
 
-An earlier attempt this session to verify guentra's `dlss5-amd-hip-linux`
+An earlier attempt this session to verify guentra's
+[`dlss5-amd-hip-linux`](https://github.com/guentra/dlss5-amd-hip-linux)
 backend (staging his real, MIT-licensed release files alongside this
 project's own `readback_coherency_probe.exe` directly in the real
 Cyberpunk install) was interrupted mid-test by the user before any
