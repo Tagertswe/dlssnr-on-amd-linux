@@ -1,0 +1,63 @@
+# Rust build artifacts (all crates under daniel/)
+target/
+
+# C build artifacts (daniel/hip-unixlib, daniel/investigations) - all
+# reproducible via `make`/a plain gcc/clang invocation, never committed.
+*.o
+daniel/hip-unixlib/x86_64-unix/
+daniel/hip-unixlib/x86_64-windows/
+daniel/investigations/rocm_probe
+daniel/investigations/fp8_kernel_probe
+daniel/investigations/wmma_fp8_probe
+daniel/investigations/raw_pointer_fault_probe
+daniel/investigations/readback_coherency_probe.exe
+daniel/investigations/submission_timing_probe.exe
+daniel/investigations/faithful_submission_probe.exe
+daniel/investigations/test_snapshot_gate
+daniel/investigations/index_overflow_probe
+daniel/hip-unixlib/test_registry
+daniel/hip-unixlib/test_version_query
+daniel/hip-unixlib/test_ext_mem
+daniel/hip-unixlib/test_hip_forward
+daniel/hip-unixlib/test_memcpy_kind
+daniel/hip-unixlib/test_alloc_cap
+daniel/hip-unixlib/test_last_error
+daniel/hip-unixlib/interop_roundtrip_test.exe
+
+# GPU/process core dumps - can contain raw GPU VRAM contents from
+# whatever was loaded at crash time (potentially proprietary weight/
+# kernel data), never committed. "gpucore.*" alone does NOT match
+# "gpucore-<timestamp>.bin" (gitignore globs aren't regex - the "."
+# is literal) - found live when a real captured devcoredump wasn't
+# actually being ignored. Both naming schemes covered explicitly now.
+gpucore.*
+gpucore-*
+core.*
+*.core
+
+# Proprietary binaries only ever belong here locally, never committed:
+# danielblnc's own runtime builds, NVIDIA-derived weights, any extracted
+# or patched build of either. See docs/linux-support-spec.md's
+# "Scope of intent" section for the hard rule behind this.
+daniel/vendor/
+
+# guentra/dlss5-amd-hip-linux's own real release binaries (MIT licensed,
+# but still a separate, independently-versioned third-party project's
+# compiled artifacts - fetched locally only for the backend-hookup
+# verification experiment, docs/linux-support-spec.md §63, never
+# committed here). ReShade's own real binary (reshade.me) is not MIT
+# and definitely never belongs in this repo either.
+daniel/backends/guentra/vendor/
+
+# The legacy OptiScaler-approach exploration and everything under it -
+# real proprietary DLLs (danielblnc's own dlssnr_amd_pass*.dll) and a
+# 147MB proprietary weights file live here locally. Never committed -
+# this is exactly the mistake that leaked into the old repo's history.
+windows/
+
+# Wine/Proton build cache
+*.cache
+
+# Runtime logs produced by the stub / danielblnc's runtime / Proton
+*.log
+daniel/investigations/windows-repro/raw_pointer_fault_repro
