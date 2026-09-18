@@ -93,6 +93,8 @@ But a real interactive play session (not a synthetic benchmark) shows two separa
 
 So: expect DLSS-NR to turn on and run compute jobs on the GPU — but expect it to be rough, slow, not something to rely on for actual gameplay yet, and not yet confirmed to look visibly correct on screen. See `CLAUDE.md` for the current working summary and `docs/linux-support-spec.md` for the full, detailed history of every finding, patch, and dead end.
 
+**This is a proof of concept, not a committed long-term project.** It demonstrates that the interop approach is technically possible, not that it's the approach that ends up working out. Whether this keeps being developed further depends on how the two unresolved problems above go — if they turn out to be fixable, or if danielblnc's own runtime evolves in a way that helps, this continues; if not, it may just stay as a documented dead end others can learn from instead.
+
 The goal has always been bringing DLSS-NR to Linux gamers — the shim design in this repo is not presented as the final or only way to get there, just the approach that's been worked through and validated so far. If a cleaner or more robust path emerges (here or elsewhere), that's a win, not a competing claim.
 
 ## Contributing / forking
