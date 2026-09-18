@@ -103,6 +103,12 @@ Pull requests are welcome too. Given how much of this project's actual debugging
 
 No proprietary code, weights, or binaries from NVIDIA or danielblnc are included anywhere in this repo, and never will be. Anything that would require bundling either is kept out (see `.gitignore`).
 
+A small number of short, factual strings extracted from danielblnc's compiled binary via `strings` (config key names, individual log messages — never disassembly or decompiled code) are quoted in `docs/linux-support-spec.md` to document real, observed interoperability behavior. Referencing his project by name, and describing how it behaves, isn't a copyright concern. Whether static string extraction itself crosses a line his own EULA draws around reverse engineering is a separate, genuinely open question this project can't resolve on its own — it's a contract question, not something settled by picking a permissive technique. This project deliberately stayed at the lower-risk end (no disassembly, no decompilation, nothing executed beyond normal use) rather than assuming that settles it.
+
+## NVIDIA
+
+DLSS, DLSS5 Neural Rendering, and the underlying technology are NVIDIA Corporation's. This project is not affiliated with, endorsed by, or sponsored by NVIDIA. No NVIDIA code, models, or weights are included here — and per `docs/linux-support-spec.md`, the weights file danielblnc's runtime uses is itself believed to be NVIDIA-derived, a separate licensing layer this project has no visibility into or control over.
+
 ## License
 
 This repo's own original code (the HIP shim in `windows-runtime-bridge/hip-unixlib/`, the diagnostics in `windows-runtime-bridge/investigations/`, docs, and everything else authored here) is licensed under the [MIT License](LICENSE). See [THIRD-PARTY.md](THIRD-PARTY.md) for the notice covering the small amount of code adapted from another MIT-licensed project.
