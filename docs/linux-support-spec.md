@@ -6542,3 +6542,102 @@ probe binaries, were committed anywhere - the release archive stays
 under `windows-runtime-bridge/backends/guentra/vendor/` (`.gitignore`d),
 and the scratch test directory was never inside version control at
 all.
+
+## 70. Cross-thread-submission trace test: `VKD3D_DEBUG=trace` produced no TRACE output, but real `dmesg`/journal access + a real device-lost capture came out of it instead
+
+Resumed the queued cross-thread-submission test (§68's list of remaining
+angles, motivated by guentra's own `cross_thread_submit` finding -
+`docs/linux-support-spec.md` context around the earlier session summary).
+Plan: use the already-deployed trace-enabled Proton build
+(`fdtest-11.0-2c`, confirmed via `d3d12core.dll`'s 114 `breadcrumb`
+string occurrences) with `VKD3D_DEBUG=trace` to get real per-call,
+thread-ID-tagged `TRACE` lines for every `ExecuteCommandLists` call,
+zero new injection/code risk.
+
+**Result: no `TRACE`-level output from vkd3d-proton at all, despite
+everything checking out.** Confirmed directly via `/proc/<pid>/environ`
+on the live process (not assumed from launch options) that
+`VKD3D_DEBUG=trace` genuinely reached the game process unmangled.
+Confirmed via reading `libs/vkd3d-common/debug.c` and `meson.build`
+that the `TRACE` macro is a real, live macro in this build (not
+compiled to a no-op) - `VKD3D_NO_TRACE_MESSAGES` is only added when
+`enable_trace` is false, and `enable_breadcrumbs = enable_trace` ties
+the confirmed-present breadcrumb strings directly to `enable_trace`
+having been true at build time. Wine's own `:trace:module`/`:trace:loaddll`
+output (37856 and 561 lines respectively, from `WINEDEBUG=+loaddll,+module`)
+appears throughout the same log, confirming the capture/log pipeline
+itself isn't swallowing `TRACE`-level lines in general. Despite all of
+this, `err`/`warn`/`fixme`/`info`-level `vkd3d-proton` lines appear
+(27/187/24/187 respectively) but zero `trace`-level ones - the
+configured runtime level behaves as if it were `WARN`, not `TRACE`.
+Root cause not found; would need live instrumentation of the init path
+to pin down further, which is a bigger detour than this check was
+meant to be. Logged honestly as unresolved rather than guessed at.
+
+**A real, unplanned finding came out of the same log instead**: repeated
+`426646.764`-`426646.776` (uptime seconds - see below for wall-clock
+conversion) `err:vkd3d-proton:d3d12_command_queue_execute: Failed to
+submit queue(s), vr -4.` lines - `vr -4` is `VK_ERROR_DEVICE_LOST` - a
+real, live-captured device-loss cascade (12ms span, several queue
+submissions and one `d3d12_command_queue_flush_waiters` failure, all
+failing back-to-back once the device was gone), independent of the
+thread-ID question entirely.
+
+**New capability discovered while chasing this**: raw `dmesg` is
+blocked in this environment (`kernel.dmesg_restrict=1`, and `sudo`
+needs interactive auth this session doesn't have) - but `journalctl -k`
+works with zero privilege escalation, since the `adm` group (already
+held) gets read access to the systemd journal. This is now the
+standing way to check kernel/GPU-driver-level events going forward,
+not `dmesg`.
+
+`journalctl -k` immediately surfaced a real ring-hang, structurally
+identical to every prior capture (same "gap of 3" between emitted and
+signaled sequence numbers as the pattern documented for danielblnc):
+
+```
+Sep 18 20:00:15 kernel: amdgpu 0000:28:00.0: Dumping IP State
+Sep 18 20:00:15 kernel: amdgpu 0000:28:00.0: Dumping IP State Completed
+Sep 18 20:00:15 kernel: amdgpu 0000:28:00.0: [drm] AMDGPU device coredump file has been created
+Sep 18 20:00:15 kernel: amdgpu 0000:28:00.0: [drm] Check your /sys/class/drm/card1/device/devcoredump/data
+Sep 18 20:00:15 kernel: amdgpu 0000:28:00.0: ring gfx_0.0.0 timeout, signaled seq=7706765, emitted seq=7706768
+Sep 18 20:00:15 kernel: amdgpu 0000:28:00.0: Starting gfx_0.0.0 ring reset
+Sep 18 20:00:15 kernel: amdgpu 0000:28:00.0: Ring gfx_0.0.0 reset succeeded
+Sep 18 20:00:15 kernel: amdgpu 0000:28:00.0: [drm] device wedged, but recovered through reset
+```
+
+**Timestamp correlation - honest result, not a clean match to the
+device-lost capture above.** Converting the trace log's uptime-based
+timestamps to wall-clock time (host `/proc/uptime` read as `427201.13`
+at `20:03:53` wall-clock, giving `wall = 20:03:53 - (427201.13 -
+uptime)`): the `vr -4` cascade (uptime `426646.764`) converts to
+approximately **19:54:38**, roughly **5 minutes 36 seconds before**
+the `20:00:15` ring-hang - not the same event, and too far apart to
+be one continuous cascade.
+
+What lines up much better in the same window: a second, short,
+verification-only relaunch (done purely to read `/proc/<pid>/environ`
+and confirm `VKD3D_DEBUG=trace` was reaching the process, not a real
+test run) was started, polled, and then **killed with `kill -9`
+within roughly 10-15 seconds of the process becoming stable** -
+deliberately abrupt, with no attempt to let any in-flight GPU work
+finish first. That kill happened in the same rough window as the
+`20:00:15` ring-hang, and a stray shutdown-sequence log line in the
+very next trace log (`pid 2759156 != 2759155, skipping destruction
+(fork without exec?)`) independently suggests the teardown wasn't
+fully clean.
+
+**This is a genuinely useful methodological finding, stated as a
+hypothesis, not a confirmed cause**: this project's own standard
+automated-test procedure - `kill -9` at a fixed deadline, with no
+graceful-shutdown step - may itself be capable of leaving GPU work
+orphaned mid-flight, and *that* orphaned work timing out is a
+plausible alternate source for some of the ring-hangs this
+investigation has been attributing to danielblnc's GPU-side spin-wait
+shader specifically. Not proven here - the correlation is circumstantial,
+built from approximate timestamp reconstruction, not a controlled
+test - but worth real scrutiny before attributing every future
+ring-hang capture to the same root cause. A cleaner follow-up would
+compare ring-hang frequency between abrupt `kill -9` and a graceful
+shutdown (closing the game normally) under otherwise identical
+conditions.
