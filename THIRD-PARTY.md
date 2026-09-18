@@ -37,6 +37,18 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+## Proton/Wine patches — LGPL-2.1, not MIT
+
+`windows-runtime-bridge/proton-patches/vkd3d-proton-external-memory-fd.patch`
+and `wine-winevulkan-external-memory-fd.patch` are diffs against
+[HansKristian-Work/vkd3d-proton](https://github.com/HansKristian-Work/vkd3d-proton)
+and [ValveSoftware/wine](https://github.com/ValveSoftware/wine),
+both **LGPL-2.1**. These two files are explicitly **excluded** from
+this repo's MIT `LICENSE` grant - a diff against LGPL-2.1 source
+contains excerpts of that source and can't be unilaterally relicensed.
+See `windows-runtime-bridge/proton-patches/README.md` for the full
+explanation, including why no upstream PR exists yet for either patch.
+
 Everything else in this repo is original work under this repo's own
 MIT license, or interoperates with third-party proprietary software
 (danielblnc's runtime, NVIDIA's weights) without including any of it -

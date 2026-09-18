@@ -12,6 +12,20 @@ Both patches are **opt-in only** (gated behind `VKD3D_CONFIG=external_memory_fd`
 — building and running a patched Proton has zero effect on any other
 game unless that flag is set.
 
+## License — these two files are NOT covered by this repo's MIT license
+
+Wine and vkd3d-proton are both **LGPL-2.1**, not MIT (see the root
+`README.md`'s License section). A patch/diff against LGPL-2.1 source
+necessarily contains excerpts of that source in its context and
+modified lines — this repo's own MIT `LICENSE` grant does not, and
+cannot, relicense that content. Treat these two `.patch` files as
+governed by LGPL-2.1 (same as the projects they modify), not MIT,
+regardless of what the top-level `LICENSE` file says about the rest of
+the repository. The new test file the vkd3d-proton patch adds
+(`tests/d3d12_external_memory_fd.c`) carries its own explicit
+LGPL-2.1+ header for the same reason, since it's written to become
+part of that LGPL-2.1 codebase if ever upstreamed.
+
 ## What each patch does, and why it's needed
 
 D3D12↔HIP interop (what `windows-runtime-bridge/hip-unixlib/` needs to share GPU memory

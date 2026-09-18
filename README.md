@@ -109,6 +109,6 @@ This repo's own original code (the HIP shim in `windows-runtime-bridge/hip-unixl
 
 The two upstream projects this work patches are **not** MIT:
 
-- [Wine](https://github.com/ValveSoftware/wine) and [vkd3d-proton](https://github.com/HansKristian-Work/vkd3d-proton) are both licensed under the **GNU Lesser General Public License v2.1 (LGPL-2.1)**, not GPL. Patches against either project are kept as separate diffs, outside this repo (see `docs/linux-support-spec.md`); if you build and distribute a patched Wine or vkd3d-proton yourself, that combined work is governed by their LGPL-2.1 terms, not this repo's MIT license.
+- [Wine](https://github.com/ValveSoftware/wine) and [vkd3d-proton](https://github.com/HansKristian-Work/vkd3d-proton) are both licensed under the **GNU Lesser General Public License v2.1 (LGPL-2.1)**, not GPL. The raw patch files against them live in `windows-runtime-bridge/proton-patches/` (no upstream PRs are open yet, so this repo is currently the only place to get them) — **but those two `.patch` files are explicitly excluded from this repo's MIT grant**, since a diff against LGPL-2.1 source can't be unilaterally relicensed; see that directory's own README for the full explanation. If you build and distribute a patched Wine or vkd3d-proton yourself, that combined work is governed by their LGPL-2.1 terms, not this repo's MIT license.
 
 danielblnc's DLSS-NR-on-AMD runtime is closed-source and not included here at all — its licensing terms are Daniel's own, not this repo's.
