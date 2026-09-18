@@ -53,6 +53,8 @@ This repo is Linux-glue code for someone else's runtime, not a community hub. Fo
 - danielblnc/DLSS-NR-on-AMD Discord: https://discord.gg/5gCwc6mskc
 - zmodelerlover/dlss5-neural-amd Discord: https://discord.gg/wYhvS3JSHM
 
+These are primarily the Windows DLSS5 mod communities, not Linux-specific — but they're the closest thing to a community this project has right now, so Linux-related discussion is welcome there too for now, until that changes (a dedicated space, GitHub Discussions, or similar).
+
 ## Credits / prior art
 
 - [zmodelerlover/dlss5-neural-amd](https://github.com/zmodelerlover/dlss5-neural-amd) (MIT) — a sibling Windows/ReShade project driving the same danielblnc runtime. Its `tools/extract_runtime.py` (a read-only PE-parsing script that carves the runtime payload out of danielblnc's own official installer, without executing it) and `src/vkbridge/vkbridge.cpp` (its Vulkan resource-interop bridge for the same runtime) were read as engineering reference for this project's own D3D12↔HIP interop and runtime-extraction work — nothing from it is vendored or copied into this repo, only consulted for pattern/approach. Not affiliated with this project or with danielblnc.
