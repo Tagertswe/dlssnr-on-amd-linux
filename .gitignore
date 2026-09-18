@@ -1,0 +1,65 @@
+# Rust build artifacts (all crates under windows-runtime-bridge/)
+target/
+
+# C build artifacts (windows-runtime-bridge/hip-unixlib, windows-runtime-bridge/investigations) - all
+# reproducible via `make`/a plain gcc/clang invocation, never committed.
+*.o
+windows-runtime-bridge/hip-unixlib/x86_64-unix/
+windows-runtime-bridge/hip-unixlib/x86_64-windows/
+windows-runtime-bridge/investigations/rocm_probe
+windows-runtime-bridge/investigations/fp8_kernel_probe
+windows-runtime-bridge/investigations/wmma_fp8_probe
+windows-runtime-bridge/investigations/raw_pointer_fault_probe
+windows-runtime-bridge/investigations/readback_coherency_probe.exe
+windows-runtime-bridge/investigations/submission_timing_probe.exe
+windows-runtime-bridge/investigations/faithful_submission_probe.exe
+windows-runtime-bridge/investigations/test_snapshot_gate
+windows-runtime-bridge/investigations/index_overflow_probe
+windows-runtime-bridge/hip-unixlib/test_registry
+windows-runtime-bridge/hip-unixlib/test_version_query
+windows-runtime-bridge/hip-unixlib/test_ext_mem
+windows-runtime-bridge/hip-unixlib/test_hip_forward
+windows-runtime-bridge/hip-unixlib/test_memcpy_kind
+windows-runtime-bridge/hip-unixlib/test_alloc_cap
+windows-runtime-bridge/hip-unixlib/test_last_error
+windows-runtime-bridge/hip-unixlib/interop_roundtrip_test.exe
+
+# GPU/process core dumps - can contain raw GPU VRAM contents from
+# whatever was loaded at crash time (potentially proprietary weight/
+# kernel data), never committed. "gpucore.*" alone does NOT match
+# "gpucore-<timestamp>.bin" (gitignore globs aren't regex - the "."
+# is literal) - found live when a real captured devcoredump wasn't
+# actually being ignored. Both naming schemes covered explicitly now.
+gpucore.*
+gpucore-*
+core.*
+*.core
+
+# Proprietary binaries only ever belong here locally, never committed:
+# danielblnc's own runtime builds, NVIDIA-derived weights, any extracted
+# or patched build of either. See docs/linux-support-spec.md's
+# "Scope of intent" section for the hard rule behind this.
+windows-runtime-bridge/vendor/
+
+# guentra/dlss5-amd-hip-linux's own real release binaries (MIT licensed,
+# but still a separate, independently-versioned third-party project's
+# compiled artifacts - fetched locally only for the backend-hookup
+# verification experiment, docs/linux-support-spec.md §63, never
+# committed here). ReShade's own real binary (reshade.me) is not MIT
+# and definitely never belongs in this repo either.
+windows-runtime-bridge/backends/guentra/vendor/
+
+# The legacy OptiScaler-approach exploration and everything under it -
+# real proprietary DLLs (danielblnc's own dlssnr_amd_pass*.dll) and a
+# 147MB proprietary weights file live here locally. Never committed -
+# this is exactly the mistake that leaked into the old repo's history.
+windows/
+
+# Wine/Proton build cache
+*.cache
+
+# Runtime logs produced by the stub / danielblnc's runtime / Proton
+*.log
+windows-runtime-bridge/investigations/windows-repro/raw_pointer_fault_repro
+docs/message-to-danielblnc.md
+docs/message-to-guentra.md

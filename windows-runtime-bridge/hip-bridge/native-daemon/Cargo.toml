@@ -1,0 +1,13 @@
+[package]
+name = "hip-bridge-daemon"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Native Linux daemon that round-trips bytes through a real HIP device (dlopen'd libamdhip64.so, no dev headers required), reached over a TCP socket by the PE-side Vulkan bridge client."
+
+[[bin]]
+name = "hip-bridge-daemon"
+path = "src/main.rs"
+
+[dependencies]
+hip-bridge-protocol = { path = "../protocol" }

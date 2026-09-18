@@ -1,0 +1,25 @@
+[package]
+name = "hip-bridge-pe-client"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Windows-side half of the #6 interop spike: imports a D3D12 shared resource into its own Vulkan device (the technique proven working in zmodelerlover/dlss5-neural-amd's MIT-licensed vkbridge.cpp), reads it back to a host-visible staging buffer, and round-trips those bytes through hip-bridge-daemon over TCP."
+
+[[bin]]
+name = "hip-bridge-pe-client"
+path = "src/main.rs"
+
+[dependencies]
+ash = "0.38"
+
+[dependencies.windows]
+version = "0.62"
+features = [
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D12",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Threading",
+]

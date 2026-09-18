@@ -1,0 +1,10 @@
+[package]
+name = "hip-bridge-protocol"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Wire protocol between hip-stub (Windows/Proton side) and hip-bridge-daemon (native Linux side): real HIP device/memory operations forwarded over a plain TCP socket. OS-independent by design so it can be unit-tested natively even though one consumer is cross-compiled to Windows."
+
+[lib]
+name = "hip_bridge_protocol"
+path = "src/lib.rs"
