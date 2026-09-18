@@ -61,3 +61,5 @@ windows/
 # Runtime logs produced by the stub / danielblnc's runtime / Proton
 *.log
 windows-runtime-bridge/investigations/windows-repro/raw_pointer_fault_repro
+docs/message-to-danielblnc.md
+docs/message-to-guentra.md

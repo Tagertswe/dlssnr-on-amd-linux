@@ -6480,3 +6480,64 @@ updated message to danielblnc (with the real 96% timeout-rate finding
 and this session's evidence that his own config levers don't change
 the underlying pattern either) is the honest next step from here,
 not another synthetic probe.
+
+## 69. guentra's backend hookup, re-tested properly - the ReShade/vkd3d-proton proxy chain does engage correctly
+
+An earlier attempt this session to verify guentra's `dlss5-amd-hip-linux`
+backend (staging his real, MIT-licensed release files alongside this
+project's own `readback_coherency_probe.exe` directly in the real
+Cyberpunk install) was interrupted mid-test by the user before any
+conclusion was reached - the one result captured then showed no
+ReShade initialization log line at all, an open red flag about whether
+his proxy chain was even engaging.
+
+Re-ran the same idea properly this time, entirely isolated from
+Cyberpunk: staged his release's `ReShade64.dll` (renamed `d3d12.dll`),
+`lmxxf-d3d12.dll`, `d3d12core.dll`, `dlss5-amd.addon64`, `dlss5_hip.dll`,
+and a hand-written `ReShade.ini` (`[PROXY]` section matching exactly
+what his own `dlssnr/deploy.py` generates -
+`EnableProxyLibrary=1`/`ProxyLibrary=.\lmxxf-d3d12.dll`) together with
+this project's own `probe.exe` in a scratch directory completely
+outside both this repo and the real game install - never staged into,
+and never touching, the actual Cyberpunk folder or process this time.
+Ran via the project's already-built, trace-capable patched Proton
+(`fdtest-11.0-2c`), reusing Cyberpunk's own Wine prefix only for its
+vkd3d-proton/driver environment (no game process launched), with
+`WINEDLLOVERRIDES="version=b;dlss5_hip=n;d3d12=n,b;d3d12core=n,b"` -
+the exact override string his own HIP-mode launch config specifies.
+
+**Result: the proxy chain engages correctly, end to end.** This time a
+real `ReShade.log` was produced (absent entirely from the earlier,
+interrupted attempt) showing:
+
+- ReShade 6.8.0.2155 loaded and initialized from the renamed
+  `d3d12.dll`, install hooks registered.
+- Export hooks installed against `lmxxf-d3d12.dll` - 8 matches found.
+- `dlss5-amd.addon64` found and loaded from the scratch directory;
+  its add-on ("DLSS5 AMD single-frame verification") **registered
+  successfully** against ReShade's own add-on API (version 20).
+- `D3D12CreateDevice` and `CreateDXGIFactory1` both correctly
+  redirected through the proxy.
+- `ID3D12Device::CreateCommandQueue` intercepted and logged with a
+  full parameter dump - direct proof the hook chain is live all the
+  way from device creation through to command-queue creation, not
+  just DLL load.
+- Clean exit (`Uninstalling 35 hook(s)`, `Finished exiting`), no
+  crash. One harmless `WARN` ("Add-on ... was not unregistered!") -
+  expected, since this project's minimal probe calls
+  `D3D12CreateDevice` and exits rather than running a real
+  ReShade-aware render loop that would give the add-on a chance to
+  unregister cleanly.
+
+This resolves the open question from the earlier, interrupted test:
+his proxy/addon mechanism does work correctly against this project's
+own D3D12 device-creation path under this project's patched Proton
+build. Nothing beyond device/queue creation was exercised (no actual
+neural-network dispatch, no frame present loop) - that's the natural
+next step if this gets revisited, but is out of scope for this pass.
+
+No files from his release, and none of this project's own compiled
+probe binaries, were committed anywhere - the release archive stays
+under `windows-runtime-bridge/backends/guentra/vendor/` (`.gitignore`d),
+and the scratch test directory was never inside version control at
+all.
