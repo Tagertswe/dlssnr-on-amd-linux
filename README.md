@@ -68,6 +68,63 @@ This repo is glue code and patches only. To actually use any of this, you need:
 - A real AMD GPU with ROCm installed on the host (see `docs/linux-support-spec.md` for the exact versions this has been validated against).
 - A Proton build with the two patches above applied — see `windows-runtime-bridge/proton-patches/` for the raw patch files and full build/test instructions (no upstream PRs are open yet, so this is the only way to get them right now), and `docs/linux-support-spec.md` for the full narrative.
 
+## Running the two backends
+
+There are two independent ways to get DLSS-NR-equivalent rendering running: this project's own `danielblnc` backend (the one described above), and `guentra`'s separate, independent open-source reimplementation. They can't run at the same time — `windows-runtime-bridge/backends/switch_backend.sh` switches between them and prints the correct Steam launch options for whichever is now active.
+
+Neither backend's actual runtime files live in this repo or get committed anywhere — see "Why files aren't deployed from this repo" below for why that's deliberate, not an oversight.
+
+### `danielblnc` backend
+
+**Requires:**
+- A real AMD GPU with ROCm installed on the host (`rocminfo`, `libamdhip64`).
+- `wine64-tools`, `clang`, `lld` (build-time only, for `hip-unixlib`).
+- [danielblnc/DLSS-NR-on-AMD](https://github.com/danielblnc/DLSS-NR-on-AMD)'s real runtime files — closed-source, get them from Daniel's own installer/releases (never included in this repo). You need `version.dll` and his weights file next to the game's `.exe`.
+
+`switch_backend.sh daniel` only prints launch options and checks that `version.dll` is present — the Proton build and the HIP shim have to be built and installed once, manually, first:
+
+1. **Build a patched Proton** via `windows-runtime-bridge/proton-patches/` (full instructions in that folder — clone `ValveSoftware/Proton`, apply the two patches, build via Valve's official SDK container, install as a custom compatibility tool under `~/.steam/root/compatibilitytools.d/`). No upstream PRs are open yet, so this is currently the only way to get a working build.
+2. **Build and install this project's HIP shim** into that same patched Proton install (`windows-runtime-bridge/hip-unixlib/README.md` has the exact steps):
+   ```sh
+   cd windows-runtime-bridge/hip-unixlib && make
+   cp x86_64-windows/amdhip64_7.dll "<Proton>/files/lib/wine/x86_64-windows/"
+   cp x86_64-unix/amdhip64_7.so "<Proton>/files/lib/wine/x86_64-unix/"
+   winebuild --builtin "<Proton>/files/lib/wine/x86_64-windows/amdhip64_7.dll"
+   ```
+3. **Place Daniel's own `version.dll` and weights file** next to the game's `.exe` (obtained separately — never distributed here).
+4. Then run:
+   ```sh
+   windows-runtime-bridge/backends/switch_backend.sh daniel --exe /path/to/Cyberpunk2077.exe
+   ```
+   and paste the printed launch options into Steam → game Properties → Launch Options, with the patched Proton build selected as the compatibility tool.
+
+Steps 1–2 are one-time, per-Proton-build setup — only step 3–4 need repeating per game/reinstall.
+
+### `guentra` backend
+
+**Requires:**
+- guentra's real release, downloaded and checksum-verified from [his GitHub releases](https://github.com/guentra/dlss5-amd-hip-linux/releases) — extract it under `windows-runtime-bridge/backends/guentra/vendor/dlss5-amd-hip-linux-vX.Y.Z/` (gitignored).
+- Your own genuine `nvngx_dlssnr.dll` (NVIDIA's real DLSS Neural Rendering DLL, v310.8.0.0) — his own installer pins its exact SHA256 and refuses anything else (including patched/modified redistributions). Not distributed by NVIDIA through any public channel as of this writing (confirmed against NVIDIA's own NGX update server config — see `docs/linux-support-spec.md` §74a) — you need to source this yourself. Kept local-only under `windows-runtime-bridge/backends/guentra/vendor/nvidia-source/` (gitignored), never committed.
+- Python 3.10+, `numpy`/`Pillow` (`pip install -r` his `requirements.txt`), and a real ROCm/HIP install on the host.
+- A Proton build (stock or this project's patched one both work — his backend doesn't need `external_memory_fd`, it uses CPU readback/upload).
+
+**Run it:**
+```sh
+windows-runtime-bridge/backends/switch_backend.sh guentra \
+    --exe /path/to/Cyberpunk2077.exe \
+    --package /path/to/nvngx_dlssnr.dll \
+    --runner /path/to/proton-install-dir
+```
+This runs his real `install.sh` (unmodified), then automatically applies a small, fully-decoupled local fix for a real launch-sandbox bug found on this exact Proton/Steam-Runtime setup (global `LD_PRELOAD` colliding with Steam's own sandbox bootstrap — see `docs/linux-support-spec.md` §74c/§74g for the full story). The printed `launch_options` string (from his own installer's output) is what goes into Steam.
+
+### Why files aren't deployed from this repo
+
+guentra's real installer deploys its files as real copies directly into the game's own directory (`d3d12.dll`, `d3d12core.dll`, `dlss5_hip.dll`, the converted weight tiles, etc.), not symlinks back to a shared source. This is intentional, not something this project's tooling changes:
+
+- None of these files could be committed to this repo anyway — they're either closed-source (danielblnc's runtime), derived from your own NVIDIA DLL (guentra's converted weights), or third-party binaries under their own licenses (guentra's release archive). They already live only in gitignored vendor folders, never in git history.
+- guentra's own installer tracks a real per-file checksum manifest for its own integrity/uninstall system (`.dlssnr-linux/manifest.json`) built around real files at real paths — replacing that with symlinks would change his tool's actual behavior, which runs against this project's explicit goal of staying as close to his real, unmodified implementation as possible, so findings here stay reportable upstream against what a normal user of his tool would actually experience.
+- Windows/Wine's own DLL search order expects these files to sit next to the game executable regardless — there's no meaningful reduction in duplication to be had by symlinking, since the "source of truth" copy already exists in exactly one gitignored place (`windows-runtime-bridge/backends/guentra/vendor/`) and the game-directory copy is just his own installer's normal, expected deployment of it.
+
 ## Repo layout
 
 - **`windows-runtime-bridge/hip-unixlib/`** — the active HIP compute shim: a PE-side stub (`pe_shim.c`, built as `amdhip64_7.dll`) paired with native Linux code (`native.c`, built as `amdhip64_7.so`) that runs in the same process under Wine and forwards real calls into the host's real ROCm/HIP runtime.
