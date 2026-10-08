@@ -26,8 +26,21 @@
 
 static FILE *log_file;
 
+/* Same startup-only logging as native.c's log_msg: per-call logging on
+ * the hot path costs frame time, so stay quiet after LOG_STARTUP_LINES
+ * unless HIP_SHIM_VERBOSE is set. */
+#define LOG_STARTUP_LINES 5000
+
 static void log_msg(const char *fmt, ...)
 {
+    static int verbose = -1;
+    static unsigned int lines;
+
+    if (verbose < 0)
+        verbose = GetEnvironmentVariableA("HIP_SHIM_VERBOSE", NULL, 0) != 0;
+    if (!verbose && lines >= LOG_STARTUP_LINES)
+        return;
+    lines++;
     if (!log_file)
     {
         char exe_path[MAX_PATH];
@@ -49,6 +62,7 @@ static void log_msg(const char *fmt, ...)
 
 typedef int hipError_t;
 #define HIP_SUCCESS 0
+#define HIP_ERROR_OUT_OF_MEMORY 2
 #define HIP_ERROR_NO_DEVICE 100
 #define HIP_ERROR_NOT_SUPPORTED 801
 /* HIP_MEMCPY_* kind constants now live in memcpy_kind.h. */
@@ -416,6 +430,73 @@ __declspec(dllexport) int __cdecl hipStreamSynchronize(void *stream)
     return a.ret == HIP_SUCCESS ? HIP_SUCCESS : set_last_error(HIP_ERROR_NOT_SUPPORTED);
 }
 
+/* ---------------------------------------------------------------------
+ * Added for danielblnc runtime v0.6.0 - real
+ * ------------------------------------------------------------------- */
+
+__declspec(dllexport) int __cdecl hipGetDevice(int *device)
+{
+    struct args_get_device a = {0};
+    WINE_UNIX_CALL(HIP_CALL_GET_DEVICE, &a);
+    if (device) *device = a.device;
+    return a.ret == HIP_SUCCESS ? HIP_SUCCESS : set_last_error(HIP_ERROR_NO_DEVICE);
+}
+
+__declspec(dllexport) int __cdecl hipStreamCreateWithPriority(void **stream, unsigned int flags, int priority)
+{
+    struct args_stream_create_with_priority a = { .flags = flags, .priority = priority };
+    WINE_UNIX_CALL(HIP_CALL_STREAM_CREATE_WITH_PRIORITY, &a);
+    if (stream) *stream = a.stream;
+    log_msg("hipStreamCreateWithPriority(flags=%u, priority=%d) -> stream=%p, ret=%d (real)",
+            flags, priority, a.stream, a.ret);
+    return a.ret == HIP_SUCCESS ? HIP_SUCCESS : set_last_error(HIP_ERROR_NOT_SUPPORTED);
+}
+
+__declspec(dllexport) int __cdecl hipStreamDestroy(void *stream)
+{
+    struct args_stream_destroy a = { .stream = stream };
+    WINE_UNIX_CALL(HIP_CALL_STREAM_DESTROY, &a);
+    return a.ret == HIP_SUCCESS ? HIP_SUCCESS : set_last_error(HIP_ERROR_NOT_SUPPORTED);
+}
+
+__declspec(dllexport) int __cdecl hipDeviceGetStreamPriorityRange(int *least, int *greatest)
+{
+    struct args_stream_priority_range a = {0};
+    WINE_UNIX_CALL(HIP_CALL_DEVICE_GET_STREAM_PRIORITY_RANGE, &a);
+    if (least) *least = a.least;
+    if (greatest) *greatest = a.greatest;
+    return a.ret == HIP_SUCCESS ? HIP_SUCCESS : set_last_error(HIP_ERROR_NOT_SUPPORTED);
+}
+
+__declspec(dllexport) int __cdecl hipHostMalloc(void **ptr, size_t size, unsigned int flags)
+{
+    struct args_host_malloc a = { .size = size, .flags = flags };
+    WINE_UNIX_CALL(HIP_CALL_HOST_MALLOC, &a);
+    if (ptr) *ptr = a.ptr;
+    log_msg("hipHostMalloc(size=%zu, flags=%#x) -> %p, ret=%d (real)", size, flags, a.ptr, a.ret);
+    return a.ret == HIP_SUCCESS ? HIP_SUCCESS : set_last_error(HIP_ERROR_OUT_OF_MEMORY);
+}
+
+__declspec(dllexport) int __cdecl hipHostGetDevicePointer(void **dev_ptr, void *host_ptr, unsigned int flags)
+{
+    struct args_host_get_device_pointer a = { .host_ptr = host_ptr, .flags = flags };
+    WINE_UNIX_CALL(HIP_CALL_HOST_GET_DEVICE_POINTER, &a);
+    if (dev_ptr) *dev_ptr = a.dev_ptr;
+    log_msg("hipHostGetDevicePointer(host=%p) -> dev=%p, ret=%d (real)", host_ptr, a.dev_ptr, a.ret);
+    return a.ret == HIP_SUCCESS ? HIP_SUCCESS : set_last_error(HIP_ERROR_NOT_SUPPORTED);
+}
+
+__declspec(dllexport) int __cdecl hipOccupancyMaxActiveBlocksPerMultiprocessor(
+    int *num_blocks, const void *function, int block_size, size_t dyn_shared)
+{
+    struct args_occupancy a = { .host_fn = function, .block_size = block_size, .dyn_shared = dyn_shared };
+    WINE_UNIX_CALL(HIP_CALL_OCCUPANCY_MAX_ACTIVE_BLOCKS, &a);
+    if (num_blocks) *num_blocks = a.num_blocks;
+    log_msg("hipOccupancyMaxActiveBlocksPerMultiprocessor(function=%p, block=%d, shared=%zu) -> %d, ret=%d (real)",
+            function, block_size, dyn_shared, a.num_blocks, a.ret);
+    return a.ret == HIP_SUCCESS ? HIP_SUCCESS : set_last_error(HIP_ERROR_NOT_SUPPORTED);
+}
+
 __declspec(dllexport) int __cdecl hipEventRecord(void *event, void *stream)
 {
     struct args_event_record a = { .event = event, .stream = stream };
@@ -519,7 +600,7 @@ __declspec(dllexport) int __cdecl hipLaunchKernel(
     const void *function, const struct dim3_pe *grid_dim, const struct dim3_pe *block_dim,
     void **args, size_t shared_mem, void *stream)
 {
-    if (!grid_dim || !block_dim || !args || !args[0])
+    if (!grid_dim || !block_dim || !args)
     {
         log_msg("hipLaunchKernel: null grid/block/args pointer");
         return set_last_error(HIP_ERROR_NOT_SUPPORTED);
@@ -528,7 +609,7 @@ __declspec(dllexport) int __cdecl hipLaunchKernel(
         .host_fn = function,
         .grid = { grid_dim->x, grid_dim->y, grid_dim->z },
         .block = { block_dim->x, block_dim->y, block_dim->z },
-        .args = args[0],
+        .args = args,
         .shared_mem = (unsigned int)shared_mem,
         .stream = stream,
     };

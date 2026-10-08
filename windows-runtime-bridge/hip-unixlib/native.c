@@ -79,6 +79,13 @@ typedef hipError_t (*hipModuleGetGlobal_t)(void **, size_t *, void *, const char
 typedef hipError_t (*hipModuleLaunchKernel_t)(void *, unsigned int, unsigned int, unsigned int,
                                               unsigned int, unsigned int, unsigned int,
                                               unsigned int, void *, void **, void **);
+typedef hipError_t (*hipGetDevice_t)(int *);
+typedef hipError_t (*hipStreamCreateWithPriority_t)(void **, unsigned int, int);
+typedef hipError_t (*hipStreamDestroy_t)(void *);
+typedef hipError_t (*hipDeviceGetStreamPriorityRange_t)(int *, int *);
+typedef hipError_t (*hipHostMalloc_t)(void **, size_t, unsigned int);
+typedef hipError_t (*hipHostGetDevicePointer_t)(void **, void *, unsigned int);
+typedef hipError_t (*hipModuleOccupancyMaxActiveBlocksPerMultiprocessor_t)(int *, void *, int, size_t);
 
 static hipMalloc_t p_hipMalloc;
 static hipFree_t p_hipFree;
@@ -108,11 +115,33 @@ static hipModuleLoadData_t p_hipModuleLoadData;
 static hipModuleGetFunction_t p_hipModuleGetFunction;
 static hipModuleGetGlobal_t p_hipModuleGetGlobal;
 static hipModuleLaunchKernel_t p_hipModuleLaunchKernel;
+static hipGetDevice_t p_hipGetDevice;
+static hipStreamCreateWithPriority_t p_hipStreamCreateWithPriority;
+static hipStreamDestroy_t p_hipStreamDestroy;
+static hipDeviceGetStreamPriorityRange_t p_hipDeviceGetStreamPriorityRange;
+static hipHostMalloc_t p_hipHostMalloc;
+static hipHostGetDevicePointer_t p_hipHostGetDevicePointer;
+static hipModuleOccupancyMaxActiveBlocksPerMultiprocessor_t p_hipModuleOccupancyMaxActiveBlocksPerMultiprocessor;
 
 static FILE *log_file;
 
+/* Every HIP call used to be logged and flushed, which on the hot path
+ * (~160 kernel launches per network job) costs real frame time and grows
+ * /tmp (tmpfs, i.e. RAM) by hundreds of MB per session. Keep the first
+ * LOG_STARTUP_LINES for load/registration diagnostics, then go quiet
+ * unless HIP_SHIM_VERBOSE is set. */
+#define LOG_STARTUP_LINES 5000
+
 static void log_msg(const char *fmt, ...)
 {
+    static int verbose = -1;
+    static unsigned int lines;
+
+    if (verbose < 0)
+        verbose = getenv("HIP_SHIM_VERBOSE") != NULL;
+    if (!verbose && lines >= LOG_STARTUP_LINES)
+        return;
+    lines++;
     if (!log_file)
         log_file = fopen("/tmp/amdhip64_7_unixlib.log", "a");
     if (!log_file)
@@ -250,6 +279,17 @@ static int ensure_loaded(void)
     p_hipModuleGetFunction = (hipModuleGetFunction_t)dlsym(hip_handle, "hipModuleGetFunction");
     p_hipModuleGetGlobal = (hipModuleGetGlobal_t)dlsym(hip_handle, "hipModuleGetGlobal");
     p_hipModuleLaunchKernel = (hipModuleLaunchKernel_t)dlsym(hip_handle, "hipModuleLaunchKernel");
+    p_hipGetDevice = (hipGetDevice_t)dlsym(hip_handle, "hipGetDevice");
+    p_hipStreamCreateWithPriority =
+        (hipStreamCreateWithPriority_t)dlsym(hip_handle, "hipStreamCreateWithPriority");
+    p_hipStreamDestroy = (hipStreamDestroy_t)dlsym(hip_handle, "hipStreamDestroy");
+    p_hipDeviceGetStreamPriorityRange =
+        (hipDeviceGetStreamPriorityRange_t)dlsym(hip_handle, "hipDeviceGetStreamPriorityRange");
+    p_hipHostMalloc = (hipHostMalloc_t)dlsym(hip_handle, "hipHostMalloc");
+    p_hipHostGetDevicePointer = (hipHostGetDevicePointer_t)dlsym(hip_handle, "hipHostGetDevicePointer");
+    p_hipModuleOccupancyMaxActiveBlocksPerMultiprocessor =
+        (hipModuleOccupancyMaxActiveBlocksPerMultiprocessor_t)dlsym(
+            hip_handle, "hipModuleOccupancyMaxActiveBlocksPerMultiprocessor");
 
     pthread_mutex_unlock(&init_mutex);
     return 1;
@@ -630,13 +670,14 @@ static NTSTATUS unix_launch_kernel(void *args)
         return STATUS_SUCCESS;
     }
 
-    /* a->args is args[0] from the PE side's hipLaunchKernel call - a
-     * real pointer into this same process's memory, holding the
-     * kernel's one struct argument (every kernel observed takes exactly
-     * one, confirmed by demangling names like
-     * _Z16k_swin_1h_32_fp810SwinParams -> k_swin_1h_32_fp8(SwinParams)).
-     * No copying, no fixups: pass it straight through. */
-    void *kernel_params[1] = { a->args };
+    /* a->args is the PE side's full hipLaunchKernel args array - real
+     * pointers into this same process's memory, one per kernel argument.
+     * hipModuleLaunchKernel reads exactly as many as the kernel's own
+     * signature declares, so this is correct for one-argument kernels
+     * (every kernel observed up to runtime 0.5.x, e.g.
+     * _Z16k_swin_1h_32_fp810SwinParams -> k_swin_1h_32_fp8(SwinParams))
+     * and for any multi-argument kernel a newer runtime adds. */
+    void **kernel_params = a->args;
     /* docs/linux-support-spec.md: this used to always pass NULL here,
      * discarding the caller's real stream - see unix_memcpy_async's
      * comment for the real, live evidence this was a genuine bug, not
@@ -818,6 +859,96 @@ static NTSTATUS unix_stream_synchronize(void *args)
     return STATUS_SUCCESS;
 }
 
+/* ---------------------------------------------------------------------
+ * Added for danielblnc runtime v0.6.0
+ * ------------------------------------------------------------------- */
+
+static NTSTATUS unix_get_device(void *args)
+{
+    struct args_get_device *a = args;
+    if (!ensure_loaded() || !p_hipGetDevice) { a->ret = -1; return STATUS_SUCCESS; }
+    a->ret = p_hipGetDevice(&a->device);
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS unix_stream_create_with_priority(void *args)
+{
+    struct args_stream_create_with_priority *a = args;
+    int have_symbol = ensure_loaded() && p_hipStreamCreateWithPriority;
+    void *real_ptr = NULL;
+    int real_ret = -1;
+
+    if (have_symbol)
+        real_ret = p_hipStreamCreateWithPriority(&real_ptr, a->flags, a->priority);
+    hip_forward_ptr_result(&a->stream, &a->ret, have_symbol, real_ptr, real_ret);
+    log_msg("hipStreamCreateWithPriority(flags=%u, priority=%d) -> stream=%p, ret=%d",
+            a->flags, a->priority, a->stream, a->ret);
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS unix_stream_destroy(void *args)
+{
+    struct args_stream_destroy *a = args;
+    if (!ensure_loaded() || !p_hipStreamDestroy) { a->ret = -1; return STATUS_SUCCESS; }
+    a->ret = p_hipStreamDestroy(a->stream);
+    log_msg("hipStreamDestroy(stream=%p) -> ret=%d", a->stream, a->ret);
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS unix_device_get_stream_priority_range(void *args)
+{
+    struct args_stream_priority_range *a = args;
+    if (!ensure_loaded() || !p_hipDeviceGetStreamPriorityRange) { a->ret = -1; return STATUS_SUCCESS; }
+    a->ret = p_hipDeviceGetStreamPriorityRange(&a->least, &a->greatest);
+    log_msg("hipDeviceGetStreamPriorityRange -> least=%d, greatest=%d, ret=%d", a->least, a->greatest, a->ret);
+    return STATUS_SUCCESS;
+}
+
+/* Pinned host memory: the pointer comes from ROCm's own mapping on this
+ * side and is dereferenced directly by PE code, which works because both
+ * halves share one address space. This is likely what CpuWait=1's
+ * host-side polling reads, so its coherence flags are logged. */
+static NTSTATUS unix_host_malloc(void *args)
+{
+    struct args_host_malloc *a = args;
+    if (!ensure_loaded() || !p_hipHostMalloc) { a->ptr = NULL; a->ret = -1; return STATUS_SUCCESS; }
+    void *ptr = NULL;
+    a->ret = p_hipHostMalloc(&ptr, a->size, a->flags);
+    a->ptr = ptr;
+    log_msg("hipHostMalloc(size=%zu, flags=%#x) -> %p, ret=%d", a->size, a->flags, ptr, a->ret);
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS unix_host_get_device_pointer(void *args)
+{
+    struct args_host_get_device_pointer *a = args;
+    if (!ensure_loaded() || !p_hipHostGetDevicePointer) { a->dev_ptr = NULL; a->ret = -1; return STATUS_SUCCESS; }
+    void *dev_ptr = NULL;
+    a->ret = p_hipHostGetDevicePointer(&dev_ptr, a->host_ptr, a->flags);
+    a->dev_ptr = dev_ptr;
+    log_msg("hipHostGetDevicePointer(host=%p, flags=%#x) -> dev=%p, ret=%d", a->host_ptr, a->flags, dev_ptr, a->ret);
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS unix_occupancy_max_active_blocks(void *args)
+{
+    struct args_occupancy *a = args;
+    void *function = find_function(a->host_fn);
+    if (!function || !ensure_loaded() || !p_hipModuleOccupancyMaxActiveBlocksPerMultiprocessor)
+    {
+        log_msg("hipOccupancyMaxActiveBlocksPerMultiprocessor: function %p not registered or symbol missing",
+                a->host_fn);
+        a->num_blocks = 0;
+        a->ret = -1;
+        return STATUS_SUCCESS;
+    }
+    a->ret = p_hipModuleOccupancyMaxActiveBlocksPerMultiprocessor(&a->num_blocks, function,
+                                                                  a->block_size, a->dyn_shared);
+    log_msg("hipOccupancyMaxActiveBlocksPerMultiprocessor(%s, block=%d, shared=%zu) -> %d, ret=%d",
+            find_function_name(a->host_fn), a->block_size, a->dyn_shared, a->num_blocks, a->ret);
+    return STATUS_SUCCESS;
+}
+
 const unixlib_entry_t __wine_unix_call_funcs[] =
 {
     unix_get_device_count,
@@ -849,4 +980,11 @@ const unixlib_entry_t __wine_unix_call_funcs[] =
     unix_register_var,
     unix_memcpy_to_symbol,
     unix_memcpy_async,
+    unix_get_device,
+    unix_stream_create_with_priority,
+    unix_stream_destroy,
+    unix_device_get_stream_priority_range,
+    unix_host_malloc,
+    unix_host_get_device_pointer,
+    unix_occupancy_max_active_blocks,
 };

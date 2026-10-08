@@ -45,6 +45,15 @@ enum hip_unix_call
     HIP_CALL_REGISTER_VAR,
     HIP_CALL_MEMCPY_TO_SYMBOL,
     HIP_CALL_MEMCPY_ASYNC,
+    /* Added for danielblnc runtime v0.6.0, which imports these (all
+     * delay-loaded, so a missing export only fails at first call). */
+    HIP_CALL_GET_DEVICE,
+    HIP_CALL_STREAM_CREATE_WITH_PRIORITY,
+    HIP_CALL_STREAM_DESTROY,
+    HIP_CALL_DEVICE_GET_STREAM_PRIORITY_RANGE,
+    HIP_CALL_HOST_MALLOC,
+    HIP_CALL_HOST_GET_DEVICE_POINTER,
+    HIP_CALL_OCCUPANCY_MAX_ACTIVE_BLOCKS,
 };
 
 struct args_get_device_count { int count; int ret; };
@@ -88,7 +97,10 @@ struct args_launch_kernel
     const void *host_fn;
     struct dim3_value grid;
     struct dim3_value block;
-    void *args;      /* args[0], the caller's single param-struct pointer - real memory, dereferenced directly */
+    void **args;     /* the caller's full kernel-params array (one pointer per kernel argument) -
+                      * real memory, passed straight to hipModuleLaunchKernel, which reads as many
+                      * entries as the kernel's own signature declares. Used to forward only
+                      * args[0], which silently broke any kernel taking more than one argument. */
     unsigned int shared_mem;
     void *stream;    /* the real stream the caller passed - previously discarded, see args_memcpy's comment */
     int ret;
@@ -112,5 +124,17 @@ struct args_event_query { void *event; int ret; };
 struct args_event_elapsed_time { void *start; void *stop; float ms; int ret; };
 struct args_stream_create { unsigned int flags; void *stream; int ret; };
 struct args_stream_synchronize { void *stream; int ret; };
+
+struct args_get_device { int device; int ret; };
+struct args_stream_create_with_priority { unsigned int flags; int priority; void *stream; int ret; };
+struct args_stream_destroy { void *stream; int ret; };
+struct args_stream_priority_range { int least; int greatest; int ret; };
+/* hipHostMalloc's pointer is real host memory mapped by ROCm on the
+ * native side - valid on the PE side too, same process address space. */
+struct args_host_malloc { void *ptr; size_t size; unsigned int flags; int ret; };
+struct args_host_get_device_pointer { void *dev_ptr; void *host_ptr; unsigned int flags; int ret; };
+/* host_fn maps to a hipFunction_t through the same registry
+ * hipLaunchKernel uses. */
+struct args_occupancy { const void *host_fn; int block_size; size_t dyn_shared; int num_blocks; int ret; };
 
 #endif
